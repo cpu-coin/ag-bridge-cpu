@@ -60,10 +60,16 @@ async function runPokeScript() {
 
     // 1. Resolve Target
     let target = STATE.targetProject;
+    
+    // Prioritize the explicitly requested target from the message itself
+    if (pendingMsgs.length > 0 && pendingMsgs[0].targetId) {
+        target = pendingMsgs[0].targetId;
+    }
+
     if (!target || target === 'global') {
         // Fallback to first available target
         const targets = await getAllTargets();
-        target = targets[0] || null;
+        target = targets[0] || { title: 'global', connectorId: 'antigravity' };
     } else if (typeof target === 'string') {
         // Handle case where target is a string from UI
         const targets = await getAllTargets();
@@ -72,7 +78,9 @@ async function runPokeScript() {
             target = found;
             STATE.targetProject = found; // Update state
         } else {
-            target = null;
+            // CDP is off, create a synthetic target for AppleScript fallback
+            target = { title: target, connectorId: 'antigravity' };
+            STATE.targetProject = target;
         }
     } else if (!target.webSocketDebuggerUrl && target.title) {
         // Try to re-resolve the target if it was stored without CDP info
