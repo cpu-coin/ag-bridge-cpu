@@ -772,8 +772,62 @@ app.get('/projects', checkAuth, async (req, res) => {
             .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
             .map(dirent => dirent.name);
             
+        // Calculate recent activity
+        const projectActivity = {};
+        for (const msg of STATE.messages) {
+            if (msg.targetId) {
+                const tId = msg.targetId.split('/').pop();
+                if (!projectActivity[tId] || new Date(msg.createdAt) > new Date(projectActivity[tId])) {
+                    projectActivity[tId] = msg.createdAt;
+                }
+            }
+        }
+
+        // Sort projects by recent activity (newest first)
+        projects.sort((a, b) => {
+            const timeA = projectActivity[a] ? new Date(projectActivity[a]).getTime() : 0;
+            const timeB = projectActivity[b] ? new Date(projectActivity[b]).getTime() : 0;
+            return timeB - timeA;
+        });
+            
         // Use Plugin Architecture to scan for Active Windows
         const activeWindows = await getAllTargets();
+        
+        // Infer active windows from recent activity (last 24h) or current selection
+        const recentProjects = new Set();
+        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+        
+        if (STATE.targetProject) {
+            if (typeof STATE.targetProject === 'string') recentProjects.add(STATE.targetProject);
+            else if (STATE.targetProject.title) recentProjects.add(STATE.targetProject.title.replace(' - Visual Studio Code', ''));
+        }
+        
+        for (const [proj, timeStr] of Object.entries(projectActivity)) {
+            if (new Date(timeStr).getTime() > oneDayAgo) {
+                recentProjects.add(proj);
+            }
+        }
+        
+        for (const proj of recentProjects) {
+            if (proj && proj !== 'global' && !proj.toLowerCase().includes('memflow')) {
+                const exists = activeWindows.find(w => w.id === proj || w.title === proj || (w.title && w.title.includes(proj)));
+                if (!exists && projects.includes(proj)) {
+                    activeWindows.push({
+                        id: proj,
+                        title: proj,
+                        connectorId: 'antigravity',
+                        type: 'inferred'
+                    });
+                }
+            }
+        }
+        
+        // Sort active windows by recent activity too
+        activeWindows.sort((a, b) => {
+            const tA = projectActivity[a.title] || projectActivity[a.id] || 0;
+            const tB = projectActivity[b.title] || projectActivity[b.id] || 0;
+            return new Date(tB).getTime() - new Date(tA).getTime();
+        });
         
         res.json({ ok: true, projects, activeWindows, selectedProject: STATE.targetProject });
     } catch (err) {
