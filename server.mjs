@@ -661,6 +661,14 @@ app.post('/messages/send', checkAuth, (req, res) => {
     from = from || 'user'; // Default to user if missing
 
     if (!to || !text) return res.status(400).json({ ok: false, error: 'missing_fields' });
+    
+    // Allow user to forcefully unstick the agent UI state via Quick Actions
+    if (text.toUpperCase().includes('ABORT') || text.toUpperCase().includes('STOP')) {
+        STATE.agent.state = 'idle';
+        STATE.agent.task = 'Execution forcefully aborted.';
+        STATE.agent.note = '';
+        broadcast('agent_status', STATE.agent);
+    }
 
     let defaultTargetId = 'global';
     if (STATE.targetProject) {
@@ -766,7 +774,8 @@ app.get('/projects', checkAuth, async (req, res) => {
     try {
         // Assume projects are stored in the parent directory of ag_bridge
         const projectsDir = dirname(__dirname);
-        const { readdir } = await import('fs/promises');
+        const { readdir, stat } = await import('fs/promises');
+        const path = await import('path');
         const items = await readdir(projectsDir, { withFileTypes: true });
         const projects = items
             .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
@@ -780,6 +789,16 @@ app.get('/projects', checkAuth, async (req, res) => {
                 if (!projectActivity[tId] || new Date(msg.createdAt) > new Date(projectActivity[tId])) {
                     projectActivity[tId] = msg.createdAt;
                 }
+            }
+        }
+        
+        // Fallback to actual file system modification time if no messages exist
+        for (const proj of projects) {
+            if (!projectActivity[proj]) {
+                try {
+                    const stats = await stat(path.join(projectsDir, proj));
+                    projectActivity[proj] = stats.mtime.toISOString();
+                } catch(e) {}
             }
         }
 

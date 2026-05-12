@@ -120,12 +120,25 @@ export async function poke(target, messageContent) {
                 
                 // We target the Antigravity Desktop App environments directly
                 const appName = 'Antigravity'; 
+                const projTarget = target.title || target.id || '';
+                
+                let windowFocusScript = '';
+                if (projTarget && projTarget !== 'global') {
+                    // Try to raise the specific project window if possible
+                    windowFocusScript = `
+                        try
+                            set targetWindow to first window whose name contains "${projTarget}"
+                            perform action "AXRaise" of targetWindow
+                            delay 0.1
+                        end try
+                    `;
+                }
                 
                 const script = `
-                    tell application "${appName}"
-                        activate
-                        delay 0.1
-                        tell application "System Events"
+                    tell application "System Events"
+                        tell process "${appName}"
+                            set frontmost to true
+                            ${windowFocusScript}
                             keystroke "${safeMsg}"
                             delay 0.1
                             keystroke return
