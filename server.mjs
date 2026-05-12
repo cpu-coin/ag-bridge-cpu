@@ -92,8 +92,14 @@ async function runPokeScript() {
     log('POKE', `Routing poke to ${target.connectorId} plugin -> ${target.title}`);
 
     // 2. Execute Plugin
+    const pokeMetadata = {
+        project: typeof target === 'object' ? (target.title || target.id || 'global') : (target || 'global'),
+        from: 'user',
+        to: 'agent',
+        channel: 'work'
+    };
     try {
-        const res = await pokeTarget(target, msgText);
+        const res = await pokeTarget(target, msgText, pokeMetadata);
         log('POKE', 'Plugin result', res);
 
         // If successful, mark ALL messages as poked
