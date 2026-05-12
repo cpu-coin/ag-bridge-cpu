@@ -53,3 +53,14 @@ export async function pokeTarget(target, messageContent, metadata = {}) {
         return { ok: false, error: 'plugin_execution_error', details: err.message };
     }
 }
+
+// --- MemFlow Bridge Functions ---
+// Re-export MemFlow-specific functions for the server polling loop
+// and MCP agent tools. These enable the full round-trip:
+//   Mobile → MemFlow inbox → Agent reads → Agent writes response → MemFlow outbox → Mobile
+export const {
+    readInbox: memflowReadInbox,
+    pollResponses: memflowPollResponses,
+    markAsRead: memflowMarkAsRead,
+    writeResponse: memflowWriteResponse
+} = memflow;

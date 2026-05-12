@@ -4,11 +4,33 @@
 Chat with your AI agent from your couch, verify tasks, and "poke" it to wake up—all from your phone.
 
 ## Features
-- 📱 **Mobile Chat UI**: Full chat interface with history and `[Mobile]` context prefix.
+- 📱 **Premium Mobile Workspace**: A glassmorphic dark-themed dashboard that feels native on your phone, complete with tabbed navigation.
+- 🎯 **Multi-Project Selection**: Actively scans local CDP ports to detect all open IDE windows running Antigravity. Select a specific project to dynamically route your commands directly to that window.
 - 🩸 **The Poke & Batching**: Remotely wakes up the Agent. Queued messages are batched for better context.
-- 💓 **Heartbeat**: Real-time connection status indicator (Green/Red).
-- 🔒 **LAN Only**: Your data stays on your network. No cloud databases.
-- 🔌 **MCP Integration**: Agent can read messages and report status directly.
+- 🔒 **Secure Remote Access**: Built-in support for Tailscale with *automatic HTTPS Let's Encrypt certificate provisioning*.
+- 🔌 **MCP Integration**: Agent can read messages and report real-time status and active tasks directly to the UI.
+
+## 🔌 Connector Plugin Architecture
+
+`ag_bridge` is designed to be fully modular and supports routing to multiple IDEs and agents through its `connectors/` directory.
+
+### Supported Connectors
+* **Antigravity IDE**: Connects via Chrome DevTools Protocol (CDP) to track active workbench instances and inject remote keystrokes.
+* *(Coming Soon)*: **VibeCraft**, **Maitrix**
+
+To add a new connector, create a file in `connectors/` that exports:
+```javascript
+export const CONNECTOR_ID = 'my_agent';
+export async function getTargets() { 
+    // Returns array of active targets
+    return [{ id: 'target_1', connectorId: CONNECTOR_ID, title: 'My Target' }]; 
+}
+export async function poke(target, messageContent) {
+    // Sends a message to the specific target
+    return { ok: true };
+}
+```
+Register the plugin in `connectors/index.mjs` to automatically enable scanning and routing.
 
 ## Architecture
 `Phone` <-> `Bridge Server` <-> `Antigravity (Agent)`
@@ -16,8 +38,8 @@ Chat with your AI agent from your couch, verify tasks, and "poke" it to wake up�
 
 ## Requirements
 - **Node.js**: v18+
-- **Antigravity**: Launched with `--remote-debugging-port=9000` via terminal.
-- **Network**: Same Wi-Fi **OR** [Tailscale](docs/remote_with_tailscale.md) for remote access.
+- **Antigravity**: Launched with `--remote-debugging-port=9000` (or up to 9003) via terminal.
+- **Network**: Local Wi-Fi **OR** [Tailscale](docs/remote_with_tailscale.md) for zero-config remote access.
 
 ## Quick Start
 
@@ -33,20 +55,18 @@ antigravity.exe . --remote-debugging-port=9000
 npm install
 npm start
 ```
-You will see a **Pairing Code** and **IP Address** in the console.
+You will see a **Pairing Code**, local IP address, and (if Tailscale is active) a secure **HTTPS** link.
 
 ### 3. Open on Phone
-1. Go to `http://<YOUR_IP>:8787` on your phone.
+1. Go to the URL provided in the console (e.g., `https://<tailnet-name>.ts.net/`).
 3. Enter the Pairing Code.
-4. Chat away!
+4. Select your active Workspace and chat away!
 
-## Remote Access (Optional) ☁️
-AG Bridge is designed as a **LAN-first** tool. It binds to `0.0.0.0` to be accessible on your local Wi-Fi.
-
-**For remote access (outside your home):**
-- **Recommended**: Use **Tailscale** (or wireguard) to create a secure mesh network.
-- **Warning**: Do NOT forward port 8787 directly to the open internet. The token auth is robust, but the server is not hardened for public exposure.
-- **Note**: Using a VPN/Tailscale does NOT bypass authentication; you will still need to pair your device.
+## Remote Access (Built-In) ☁️
+AG Bridge is designed with **first-class Tailscale integration** for secure remote access:
+- **Auto-HTTPS**: When you run `npm start`, the bridge automatically detects Tailscale and runs `tailscale serve --bg 8787` to provision a secure Let's Encrypt SSL certificate. 
+- **Requirements**: You must enable HTTPS and "Serve" in your Tailscale Admin Console.
+- **Security**: The connection is completely encrypted end-to-end. There are no open ports on your router, and the web interface requires an initial Pairing Code on first connect.
 
 ## Testing & CI 🧪
 To run the test suite locally:

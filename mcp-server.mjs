@@ -6,17 +6,23 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprot
 import { z } from "zod";
 import fs from 'fs/promises';
 import path from 'path';
+import { memflowReadInbox, memflowMarkAsRead, memflowWriteResponse } from './connectors/index.mjs';
 
 // --- Configuration ---
 const AG_BRIDGE_URL = process.env.AG_BRIDGE_URL || "http://127.0.0.1:8787";
 const AG_BRIDGE_TOKEN = process.env.AG_BRIDGE_TOKEN || ""; // Optional
 const AG_REPO_ROOT = process.env.AG_REPO_ROOT ? path.resolve(process.env.AG_REPO_ROOT) : process.cwd();
+const CURRENT_PROJECT = path.basename(AG_REPO_ROOT);
 const AG_NTFY_TOPIC = process.env.AG_NTFY_TOPIC || "ag_bridge_alerts"; // Public default!
 
 // --- Helpers ---
 async function api(method, endpoint, body) {
     const headers = { "Content-Type": "application/json" };
     if (AG_BRIDGE_TOKEN) headers["x-ag-token"] = AG_BRIDGE_TOKEN;
+
+    if (body && typeof body === 'object') {
+        body.project = body.project || CURRENT_PROJECT;
+    }
 
     try {
         const res = await fetch(`${AG_BRIDGE_URL}${endpoint}`, {
@@ -46,7 +52,7 @@ const TOOLS = {
             limit: z.number().optional()
         }),
         handler: async (args) => {
-            const q = new URLSearchParams({ to: args.to });
+            const q = new URLSearchParams({ to: args.to, filterByProject: CURRENT_PROJECT });
             if (args.status) q.append("status", args.status);
             if (args.limit) q.append("limit", args.limit.toString());
 
@@ -119,7 +125,8 @@ const TOOLS = {
         handler: async (args) => {
             // Security: Prevent traversal
             const targetPath = path.resolve(AG_REPO_ROOT, args.path);
-            if (!targetPath.startsWith(AG_REPO_ROOT)) {
+            const relativePath = path.relative(AG_REPO_ROOT, targetPath);
+            if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
                 throw new Error("Access denied: Path outside repo root");
             }
 
@@ -225,6 +232,54 @@ const TOOLS = {
             } catch (err) {
                 return { content: [{ type: "text", text: `Failed to send notification: ${err.message}` }], isError: true };
             }
+        }
+    },
+
+    // --- MemFlow Bridge Tools ---
+    // These tools let agents read/write through MemFlow directly,
+    // bypassing the HTTP API entirely. No IDE poke needed.
+
+    memflow_inbox: {
+        schema: z.object({
+            project: z.string().optional()
+        }),
+        handler: async (args) => {
+            const messages = await memflowReadInbox(args.project || CURRENT_PROJECT);
+            if (messages.length === 0) {
+                return { content: [{ type: "text", text: "No pending mobile messages in MemFlow inbox." }] };
+            }
+            return { content: [{ type: "text", text: JSON.stringify(messages, null, 2) }] };
+        }
+    },
+
+    memflow_ack: {
+        schema: z.object({
+            ids: z.array(z.string())
+        }),
+        handler: async (args) => {
+            await memflowMarkAsRead(args.ids);
+            return { content: [{ type: "text", text: `Marked ${args.ids.length} message(s) as read in MemFlow.` }] };
+        }
+    },
+
+    memflow_reply: {
+        schema: z.object({
+            text: z.string(),
+            channel: z.enum(["work", "status", "qa"]).optional(),
+            inReplyTo: z.string().optional()
+        }),
+        handler: async (args) => {
+            const res = await memflowWriteResponse(args.text, {
+                project: CURRENT_PROJECT,
+                channel: args.channel || 'work',
+                from: 'agent',
+                inReplyTo: args.inReplyTo,
+                actorId: `agent_${CURRENT_PROJECT}`
+            });
+            if (res.ok) {
+                return { content: [{ type: "text", text: `Response written to MemFlow outbox (${res.method}). Mobile will receive it shortly.` }] };
+            }
+            return { content: [{ type: "text", text: `Failed to write response: ${JSON.stringify(res)}` }], isError: true };
         }
     }
 };
@@ -364,6 +419,40 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                         tags: { type: "array", items: { type: "string" } }
                     },
                     required: ["message"]
+                }
+            },
+            {
+                name: "memflow_inbox",
+                description: "Read pending mobile messages from MemFlow inbox (no IDE/CDP needed)",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        project: { type: "string" }
+                    }
+                }
+            },
+            {
+                name: "memflow_ack",
+                description: "Mark MemFlow inbox messages as read",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        ids: { type: "array", items: { type: "string" } }
+                    },
+                    required: ["ids"]
+                }
+            },
+            {
+                name: "memflow_reply",
+                description: "Write agent response to MemFlow outbox (delivered to mobile via ag_bridge polling)",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        text: { type: "string" },
+                        channel: { type: "string", enum: ["work", "status", "qa"] },
+                        inReplyTo: { type: "string" }
+                    },
+                    required: ["text"]
                 }
             }
         ]

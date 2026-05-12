@@ -7,7 +7,7 @@ import { mkdir, readFile, writeFile, rename, appendFile } from 'fs/promises';
 import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getAllTargets, pokeTarget } from './connectors/index.mjs';
+import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox } from './connectors/index.mjs';
 
 const APP_VERSION = '1.0.1';
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -942,6 +942,70 @@ const interval = setInterval(() => {
 wss.on('close', () => {
     clearInterval(interval);
 });
+
+// --- MemFlow Outbox Polling ---
+// Checks MemFlow for agent responses every 5 seconds and relays them to mobile.
+// This completes the round-trip: Mobile → MemFlow inbox → Agent → MemFlow outbox → Mobile
+let memflowPollTimer = null;
+const MEMFLOW_POLL_INTERVAL = 5000; // 5 seconds
+
+async function pollMemflowOutbox() {
+    try {
+        // Determine which project to poll for
+        const project = STATE.targetProject 
+            ? (typeof STATE.targetProject === 'string' ? STATE.targetProject : STATE.targetProject.title || STATE.targetProject.id)
+            : null;
+        
+        const responses = await memflowPollResponses(project);
+        
+        if (responses.length > 0) {
+            log('MEMFLOW', `Found ${responses.length} agent response(s) in outbox`);
+            
+            const memflowIdsToMark = [];
+            
+            for (const resp of responses) {
+                // Convert to ag_bridge message format and store in STATE
+                const msg = {
+                    id: `msg_mf_${resp.id}`,
+                    createdAt: resp.createdAt,
+                    from: resp.from || 'agent',
+                    to: 'user',
+                    channel: resp.channel || 'work',
+                    text: resp.text,
+                    status: 'new',
+                    targetId: resp.project || project,
+                    source: 'memflow'
+                };
+                
+                // Avoid duplicates
+                if (!STATE.messages.find(m => m.id === msg.id)) {
+                    STATE.messages.unshift(msg);
+                    broadcast('new_message', msg);
+                    log('MEMFLOW', `Relayed agent response to mobile: ${msg.id}`);
+                }
+                
+                if (resp.memflowId) {
+                    memflowIdsToMark.push(resp.memflowId);
+                }
+            }
+            
+            // Mark as read in MemFlow so they don't get polled again
+            if (memflowIdsToMark.length > 0) {
+                await memflowMarkAsRead(memflowIdsToMark);
+            }
+            
+            saveState();
+        }
+    } catch (err) {
+        // Silent fail — polling errors should not crash the server
+        if (err.message && !err.message.includes('no such table')) {
+            log('MEMFLOW', `Poll error: ${err.message}`);
+        }
+    }
+}
+
+// Start polling when server starts
+memflowPollTimer = setInterval(pollMemflowOutbox, MEMFLOW_POLL_INTERVAL);
 
 // --- Start ---
 // Load state then start

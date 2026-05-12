@@ -34,3 +34,4 @@ test_mcp_init.json
 .env
 *.local
 data/approvals.json
+data/code.txt
