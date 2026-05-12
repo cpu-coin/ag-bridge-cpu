@@ -15,8 +15,8 @@ import crypto from 'crypto';
 
 export const CONNECTOR_ID = 'memflow';
 
-// MemFlow CLI path (installed globally)
-const MEMFLOW_BIN = process.env.MEMFLOW_BIN || 'memflow';
+// MemFlow CLI path (absolute path to ensure background processes find it)
+const MEMFLOW_BIN = process.env.MEMFLOW_BIN || '/Users/seanbarger_1/.memflow/bin/memflow';
 
 // Namespace constants for bridge messages
 const INBOX_NAMESPACE = 'ag_bridge/inbox';
@@ -28,14 +28,16 @@ const OUTBOX_NAMESPACE = 'ag_bridge/outbox';
  */
 export async function getTargets() {
     try {
-        const version = execSync(`${MEMFLOW_BIN} --version`, { encoding: 'utf8', timeout: 5000 }).trim();
-        return [{
-            id: 'memflow-bridge',
-            connectorId: CONNECTOR_ID,
-            title: `MemFlow (${version})`,
-            type: 'memflow',
-            webSocketDebuggerUrl: null // Not needed
-        }];
+        return [
+            {
+                id: 'memflow-bridge',
+                connectorId: CONNECTOR_ID,
+                title: 'MemFlow (Headless)',
+                type: 'memflow',
+                port: '8080',
+                webSocketDebuggerUrl: 'http://127.0.0.1:8080/mcp' 
+            }
+        ];
     } catch (e) {
         console.warn('[MEMFLOW] MemFlow CLI not found or not running:', e.message);
         return [];

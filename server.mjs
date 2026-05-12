@@ -99,7 +99,17 @@ async function runPokeScript() {
         channel: 'work'
     };
     try {
-        const res = await pokeTarget(target, msgText, pokeMetadata);
+        let res;
+
+        // Dual-Routing: Always write to MemFlow first for headless persistence/history
+        if (target.connectorId !== 'memflow') {
+            await pokeTarget({ connectorId: 'memflow' }, msgText, pokeMetadata).catch(e => {
+                log('POKE', 'Dual-route memflow write failed (non-fatal)', e.message);
+            });
+        }
+
+        // Execute primary target poke (e.g. Antigravity IDE typing & execution)
+        res = await pokeTarget(target, msgText, pokeMetadata);
         log('POKE', 'Plugin result', res);
 
         // If successful, mark ALL messages as poked
