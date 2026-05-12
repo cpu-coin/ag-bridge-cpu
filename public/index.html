@@ -1,457 +1,395 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Antigravity Mobile</title>
   <link rel="manifest" href="manifest.json">
-  <title>AG Bridge</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #0f1115;
-      --card-bg: #1a1d23;
-      --text: #e0e0e0;
+      --bg: #050505;
+      --glass-bg: rgba(255, 255, 255, 0.04);
+      --glass-border: rgba(255, 255, 255, 0.08);
+      --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+      --text: #f3f4f6;
       --text-dim: #9ca3af;
-      --primary: #3b82f6;
+      --primary: #38bdf8;
+      --primary-glow: rgba(56, 189, 248, 0.4);
+      --accent: #818cf8;
       --success: #10b981;
-      --danger: #ef4444;
-      --border: #374151;
+      --danger: #f43f5e;
+      --warning: #f59e0b;
     }
+
+    * { box-sizing: border-box; }
 
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: 'Outfit', sans-serif;
       margin: 0;
       padding: 0;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* Ambient Background Glow */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -20%; left: -10%;
+      width: 60%; height: 60%;
+      background: radial-gradient(circle, var(--primary-glow) 0%, transparent 60%);
+      filter: blur(100px);
+      z-index: -1;
+    }
+    body::after {
+      content: '';
+      position: fixed;
+      bottom: -20%; right: -10%;
+      width: 60%; height: 60%;
+      background: radial-gradient(circle, rgba(129, 140, 248, 0.3) 0%, transparent 60%);
+      filter: blur(100px);
+      z-index: -1;
     }
 
     .container {
       max-width: 600px;
       margin: 0 auto;
+      padding: 24px 20px;
+      padding-bottom: 100px;
+    }
+
+    .hidden { display: none !important; }
+    .flex { display: flex; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .gap-2 { gap: 8px; }
+    .gap-4 { gap: 16px; }
+
+    h1, h2, h3 { font-weight: 600; margin: 0; letter-spacing: -0.5px; }
+    h1 { font-size: 32px; margin-bottom: 8px; font-weight: 800; background: linear-gradient(to right, #fff, #9ca3af); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    p { margin: 0 0 16px; color: var(--text-dim); line-height: 1.6; }
+
+    /* Glassmorphic Card */
+    .glass-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border);
+      border-radius: 20px;
       padding: 20px;
-      padding-bottom: 80px;
-    }
-
-    h1,
-    h2,
-    h3 {
-      margin: 0;
-      font-weight: 600;
-    }
-
-    h1 {
-      font-size: 24px;
-      margin-bottom: 8px;
-    }
-
-    p {
-      margin: 0 0 12px;
-      color: var(--text-dim);
-      line-height: 1.5;
-    }
-
-    /* Utility */
-    .hidden {
-      display: none !important;
-    }
-
-    .flex {
-      display: flex;
-    }
-
-    .items-center {
-      align-items: center;
-    }
-
-    .justify-between {
-      justify-content: space-between;
-    }
-
-    .gap-2 {
-      gap: 8px;
-    }
-
-    .mb-4 {
-      margin-bottom: 16px;
-    }
-
-    .mt-4 {
-      margin-top: 16px;
+      box-shadow: var(--glass-shadow);
+      margin-bottom: 20px;
+      transition: transform 0.2s, box-shadow 0.2s;
     }
 
     /* Inputs & Buttons */
     input {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--glass-border);
       color: var(--text);
-      padding: 12px;
-      border-radius: 8px;
-      font-size: 18px;
+      padding: 14px 16px;
+      border-radius: 12px;
+      font-size: 16px;
       width: 100%;
-      box-sizing: border-box;
       outline: none;
-      text-align: center;
-      letter-spacing: 2px;
+      transition: all 0.3s ease;
+      font-family: inherit;
     }
-
-    input:focus {
-      border-color: var(--primary);
+    input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-glow); }
+    
+    #code-input {
+      text-align: center; letter-spacing: 6px; font-size: 24px; font-family: 'JetBrains Mono', monospace; font-weight: 600;
     }
 
     button {
-      background: var(--primary);
+      background: linear-gradient(135deg, var(--primary), var(--accent));
       color: white;
       border: none;
-      padding: 14px;
-      border-radius: 8px;
+      padding: 14px 24px;
+      border-radius: 12px;
       font-size: 16px;
       font-weight: 600;
       width: 100%;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
+      font-family: inherit;
+      box-shadow: 0 4px 15px var(--primary-glow);
     }
+    button:active { transform: translateY(2px); box-shadow: 0 2px 8px var(--primary-glow); }
+    button.secondary { background: rgba(255, 255, 255, 0.08); box-shadow: none; border: 1px solid var(--glass-border); color: var(--text); }
+    button.danger { background: var(--danger); box-shadow: 0 4px 15px rgba(244, 63, 94, 0.4); }
+    button.success { background: var(--success); box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); }
 
-    button:active {
-      opacity: 0.8;
+    /* Tabs */
+    .tabs {
+      display: flex; gap: 8px; margin-bottom: 24px; overflow-x: auto; padding-bottom: 8px;
     }
-
-    button.secondary {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      color: var(--text);
+    .tab-btn {
+      width: auto; padding: 10px 16px; background: transparent; border: 1px solid transparent; box-shadow: none; color: var(--text-dim); border-radius: 100px;
     }
-
-    button.danger {
-      background: var(--danger);
+    .tab-btn.active {
+      background: var(--glass-bg); border-color: var(--glass-border); color: var(--text);
     }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
 
-    button.success {
-      background: var(--success);
-    }
-
-    /* Views */
-    #pairing-view {
-      height: 90vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      text-align: center;
-    }
-
-    /* Cards */
-    .card {
-      background: var(--card-bg);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
-      border: 1px solid var(--border);
-    }
-
-    .approval-item {
-      border-left: 4px solid var(--primary);
-    }
-
-    .approval-item.status-approved {
-      border-left-color: var(--success);
-      opacity: 0.6;
-    }
-
-    .approval-item.status-denied {
-      border-left-color: var(--danger);
-      opacity: 0.6;
-    }
-
-    .tag {
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 4px;
-      background: #333;
-      text-transform: uppercase;
-      font-weight: bold;
-    }
-
-    .tag.pending {
-      background: #d97706;
-      color: white;
-    }
-
-    .tag.approved {
-      background: var(--success);
-      color: white;
-    }
-
-    .tag.denied {
-      background: var(--danger);
-      color: white;
-    }
-
-    pre {
-      background: black;
-      padding: 10px;
-      border-radius: 6px;
-      overflow-x: auto;
-      font-size: 13px;
-      color: #a5f3fc;
-      margin: 10px 0;
-    }
-
-    /* Logs */
-    #event-log {
-      font-family: monospace;
-      font-size: 12px;
-      color: var(--text-dim);
-      max-height: 150px;
-      overflow-y: auto;
-      border-top: 1px solid var(--border);
-      padding-top: 10px;
-    }
-
-    .log-entry {
-      margin-bottom: 4px;
-    }
-
-    .log-entry span {
-      color: var(--primary);
-    }
-
-    /* Header */
-    header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .status-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #444;
-      display: inline-block;
-      margin-right: 6px;
-    }
-
-    .status-dot.connected {
-      background: var(--success);
-      box-shadow: 0 0 8px var(--success);
-    }
-
-    .chat-container {
-      max-height: 400px;
-      overflow-y: auto;
-      background: rgba(0, 0, 0, 0.2);
-      border-radius: 8px;
-      padding: 10px;
-      margin-bottom: 10px;
-    }
-
-    .msg {
-      margin-bottom: 10px;
-      padding: 8px 12px;
-      border-radius: 8px;
-      max-width: 85%;
-      font-size: 14px;
-    }
-
-    .msg.user {
-      background: var(--primary);
-      color: #000;
-      margin-left: auto;
-      border-bottom-right-radius: 0;
-    }
-
-    .msg.agent {
-      background: #333;
-      color: #ddd;
-      margin-right: auto;
-      border-bottom-left-radius: 0;
-    }
-
-    .msg-meta {
+    .version-badge {
+      position: fixed;
+      bottom: 8px;
+      right: 8px;
       font-size: 10px;
-      opacity: 0.7;
-      margin-bottom: 2px;
-      display: flex;
-      justify-content: space-between;
+      color: var(--text-dim);
+      opacity: 0.5;
+      pointer-events: none;
+      z-index: 9999;
+      font-family: 'JetBrains Mono', monospace;
     }
 
-    .chat-input-area {
-      display: flex;
-      gap: 8px;
-    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 
-    .chat-input {
-      flex: 1;
-      background: #1a1a1a;
-      border: 1px solid #444;
-      color: white;
-      padding: 10px;
-      border-radius: 6px;
+    /* Header & Status */
+    header {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;
     }
-
-    .quick-actions {
-      display: flex;
-      gap: 5px;
-      margin-top: 10px;
-      overflow-x: auto;
+    .status-dot {
+      width: 12px; height: 12px; border-radius: 50%; background: #444; display: inline-block; margin-right: 8px; transition: 0.3s;
     }
-
-    .quick-btn {
-      font-size: 12px;
-      padding: 6px 10px;
-      white-space: nowrap;
-      background: #333;
-      border: 1px solid #555;
-      color: #aaa;
-    }
+    .status-dot.connected { background: var(--success); box-shadow: 0 0 12px var(--success); }
 
     .agent-status {
-      font-size: 12px;
-      padding: 4px 8px;
-      border-radius: 12px;
-      background: #333;
-      color: #888;
-      margin-left: 10px;
+      font-size: 12px; padding: 6px 12px; border-radius: 100px; background: rgba(255,255,255,0.05); color: #aaa; margin-left: auto; border: 1px solid var(--glass-border); font-weight: 600;
     }
+    .agent-status.working { color: var(--warning); border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.1); }
+    .agent-status.idle { color: var(--success); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.1); }
 
-    .agent-status.working {
-      color: var(--danger);
-      border: 1px solid var(--danger);
-      background: rgba(239, 68, 68, 0.1); /* Subtle red tint */
+    /* Chat Area */
+    .chat-container {
+      height: 400px; overflow-y: auto; padding: 4px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px;
+      scrollbar-width: thin; scrollbar-color: var(--glass-border) transparent;
     }
+    .msg {
+      padding: 12px 16px; border-radius: 16px; max-width: 85%; font-size: 15px; position: relative;
+    }
+    .msg.user { background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(129, 140, 248, 0.2)); border: 1px solid rgba(129, 140, 248, 0.3); margin-left: auto; border-bottom-right-radius: 4px; }
+    .msg.agent { background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border); margin-right: auto; border-bottom-left-radius: 4px; color: #ddd; }
+    .msg-meta { font-size: 11px; opacity: 0.6; margin-bottom: 6px; display: flex; justify-content: space-between; text-transform: uppercase; letter-spacing: 0.5px; }
 
-    .agent-status.idle {
-      color: var(--success);
-      border: 1px solid var(--success);
-    }
+    .quick-actions { display: flex; gap: 8px; margin-top: 12px; overflow-x: auto; padding-bottom: 4px; }
+    .quick-btn { width: auto; font-size: 13px; padding: 8px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 100px; box-shadow: none; }
 
-    .agent-status.error {
-      color: var(--danger);
-      border: 1px solid var(--danger);
+    /* Projects Grid */
+    .projects-grid {
+      display: grid; grid-template-columns: 1fr; gap: 12px;
     }
+    .project-card {
+      background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border); border-radius: 12px; padding: 16px; display: flex; align-items: center; cursor: pointer; transition: 0.2s;
+    }
+    .project-card:hover { background: rgba(255, 255, 255, 0.05); border-color: var(--primary); }
+    .project-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 16px; }
+
+    /* Approvals */
+    .approval-item { border-left: 4px solid var(--primary); }
+    .approval-item.status-approved { border-left-color: var(--success); opacity: 0.6; }
+    .approval-item.status-denied { border-left-color: var(--danger); opacity: 0.6; }
+    .tag { font-size: 11px; padding: 4px 8px; border-radius: 6px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; }
+    .tag.pending { background: rgba(245, 158, 11, 0.2); color: var(--warning); border: 1px solid rgba(245,158,11,0.3); }
+    .tag.approved { background: rgba(16, 185, 129, 0.2); color: var(--success); border: 1px solid rgba(16,185,129,0.3); }
+    .tag.denied { background: rgba(244, 63, 94, 0.2); color: var(--danger); border: 1px solid rgba(244,63,94,0.3); }
+    pre { background: rgba(0,0,0,0.5); padding: 12px; border-radius: 8px; overflow-x: auto; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #a5f3fc; border: 1px solid var(--glass-border); }
+
+    #event-log { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); max-height: 200px; overflow-y: auto; }
+    .log-entry span { color: var(--primary); opacity: 0.8; margin-right: 8px; }
+
+    /* Views */
+    #pairing-view { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
   </style>
 </head>
-
 <body>
 
+  <!-- Pairing Screen -->
   <div id="pairing-view" class="container hidden">
-    <h1>AG Bridge</h1>
-    <p>Enter 6-digit code from laptop console</p>
-    <div class="mb-4">
-      <input type="text" id="code-input" placeholder="000000" maxlength="6" inputmode="numeric" />
+    <div style="width: 100%; max-width: 360px;">
+      <img src="logo.png" alt="Antigravity Logo" style="width: 80px; height: 80px; border-radius: 24px; box-shadow: 0 10px 30px var(--primary-glow); margin: 0 auto 24px; display: block; object-fit: cover;" />
+      <h1>Antigravity Mobile</h1>
+      <p style="margin-bottom: 32px;">Connect your device to supervise<br>the AI agent network.</p>
+      <div class="glass-card">
+        <p style="font-size: 13px; margin-bottom: 12px;">Enter 6-digit Bridge PIN</p>
+        <div style="margin-bottom: 16px;">
+          <input type="text" id="code-input" placeholder="000000" maxlength="6" inputmode="numeric" />
+        </div>
+        <button onclick="attemptPair()">Authenticate</button>
+      </div>
     </div>
-    <button onclick="attemptPair()">Connect</button>
   </div>
 
+  <!-- Dashboard Screen -->
   <div id="dashboard-view" class="container hidden">
     <header>
       <div class="flex items-center">
         <span id="ws-status" class="status-dot"></span>
-        <h2 style="font-size:18px;">Dashboard <span style="font-size:10px; opacity:0.5">v0.3.1</span></h2>
-        <span id="agent-status-pill" class="agent-status">Agent: ???</span>
+        <h2 style="font-size:20px; font-weight:800;">Dashboard</h2>
       </div>
-      <div class="flex gap-2">
-        <button id="strict-btn" class="secondary" style="width: auto; padding: 8px 12px; font-size: 14px;"
-          onclick="toggleStrict()">Strict: ?</button>
-        <button class="secondary" style="width: auto; padding: 8px 12px; font-size: 14px;"
-          onclick="logout()">Disconnect</button>
-      </div>
+      <span id="agent-status-pill" class="agent-status">Status: Connecting...</span>
     </header>
 
-    <div class="card">
-      <h3>Comms</h3>
-      <div id="chat-thread" class="chat-container">
-        <div style="text-align:center; color:#666; padding:20px;">No messages</div>
-      </div>
-
-      <div class="chat-input-area">
-        <input type="text" id="chat-input" class="chat-input" placeholder="Message to Agent..."
-          onkeypress="handleEnter(event)">
-        <button onclick="sendChat()" style="width: auto;">Send</button>
-      </div>
-
-      <div class="quick-actions">
-        <button class="quick-btn" onclick="sendQuick('CONTINUE')">CONTINUE</button>
-        <button class="quick-btn" onclick="sendQuick('STOP')">STOP</button>
-        <button class="quick-btn" onclick="sendQuick('STATUS')">STATUS</button>
-      </div>
+    <!-- Navigation Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('tab-monitor', this)">Monitor</button>
+      <button class="tab-btn" onclick="switchTab('tab-chat', this)">Chat</button>
+      <button class="tab-btn" onclick="switchTab('tab-projects', this)">Projects</button>
+      <button class="tab-btn" onclick="switchTab('tab-queue', this)">Queue (<span id="pending-count">0</span>)</button>
+      <button class="tab-btn" onclick="switchTab('tab-settings', this)">Settings</button>
     </div>
 
-    <div class="card">
-      <div class="flex justify-between items-center">
-        <div>
-          <div style="font-size: 32px; font-weight: bold;" id="pending-count">0</div>
-          <div style="font-size: 12px; color: var(--text-dim);">PENDING</div>
+    <!-- Tab 0: Monitor -->
+    <div id="tab-monitor" class="tab-content active">
+      <div class="glass-card" style="padding-bottom: 12px; height: 100%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="margin: 0;">Global Monitor</h3>
+          <span style="font-size: 11px; color: var(--success); background: rgba(16, 185, 129, 0.1); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(16,185,129,0.2);">All Projects</span>
         </div>
-        <div>
-          <button class="secondary" style="font-size: 12px; padding: 8px;" onclick="createTestApproval()">+ Test
-            (Debug)</button>
-          <button class="secondary" style="font-size: 12px; padding: 8px; margin-top: 4px;"
-            onclick="requestRealApproval()">+ Request (New)</button>
+        <div id="monitor-thread" class="chat-container" style="height: 500px;">
+          <div style="text-align:center; color:var(--text-dim); padding:40px 20px;">Loading global feed...</div>
         </div>
       </div>
     </div>
 
-    <h3 class="mb-4">Queue</h3>
-    <div id="approvals-list">
-      <!-- Approvals injected here -->
-      <p style="text-align:center; padding: 20px;">No approvals found.</p>
+    <!-- Tab 1: Chat -->
+    <div id="tab-chat" class="tab-content">
+      <div class="glass-card" style="padding-bottom: 12px;">
+        <div id="active-project-banner" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;">
+          <div style="width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 8px var(--success);"></div>
+          <div style="font-size: 13px; color: var(--text);">
+            <span style="color: var(--text-dim);">Target Workspace:</span> 
+            <select id="chat-project-selector" onchange="selectProject(this.value)" style="background: transparent; border: 1px solid rgba(16, 185, 129, 0.4); color: var(--success); font-weight: 600; padding: 4px 8px; border-radius: 6px; outline: none; max-width: 200px; margin-left: 6px; cursor: pointer;">
+              <option value="global" style="color: black;">Global Scope</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="agent-active-task" style="font-size: 13px; color: var(--primary); margin-bottom: 12px; display: none; background: rgba(56, 189, 248, 0.1); padding: 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2);">
+          <strong style="color: white;">Current Task:</strong> <span id="agent-task-text"></span>
+        </div>
+        <div id="chat-thread" class="chat-container">
+          <div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No messages yet.</div>
+        </div>
+        <div class="flex gap-2">
+          <input type="text" id="chat-input" placeholder="Message Antigravity..." onkeypress="handleEnter(event)">
+          <button onclick="sendChat()" style="width: auto; padding: 0 20px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
+        </div>
+        <div class="quick-actions">
+          <button class="quick-btn" onclick="sendQuick('CONTINUE')">Continue</button>
+          <button class="quick-btn" onclick="sendQuick('STOP')">Stop Execution</button>
+          <button class="quick-btn" onclick="sendQuick('STATUS')">Report Status</button>
+        </div>
+      </div>
     </div>
 
-    <div style="margin-top: 40px;">
-      <h3>Event Log</h3>
-      <div id="event-log"></div>
+    <!-- Tab 2: Projects -->
+    <div id="tab-projects" class="tab-content">
+      <div class="glass-card">
+        <div class="flex justify-between items-center mb-4">
+          <h3>Local Workspaces</h3>
+          <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="fetchProjects()">Refresh</button>
+        </div>
+        <div id="projects-grid" class="projects-grid">
+          <div style="text-align:center; color:var(--text-dim); padding:20px;">Loading projects...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Queue -->
+    <div id="tab-queue" class="tab-content">
+      <div class="glass-card">
+        <div class="flex justify-between items-center mb-4">
+          <h3>Approval Queue</h3>
+          <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="requestRealApproval()">+ Mock Req</button>
+        </div>
+        <div id="approvals-list">
+          <p style="text-align:center; color:var(--text-dim); padding: 20px;">No pending approvals.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Settings -->
+    <div id="tab-settings" class="tab-content">
+      <div class="glass-card">
+        <h3>Security</h3>
+        <p style="font-size: 13px; margin-top: 8px;">Manage your connection and execution policies.</p>
+        
+        <div class="flex justify-between items-center" style="background: rgba(0,0,0,0.3); padding: 16px; border-radius: 12px; border: 1px solid var(--glass-border); margin-bottom: 16px;">
+          <div>
+            <div style="font-weight: 600;">Strict Mode</div>
+            <div style="font-size: 12px; color: var(--text-dim);">Require approval for all commands.</div>
+          </div>
+          <button id="strict-btn" class="secondary" style="width: auto; padding: 8px 16px; font-size: 14px;" onclick="toggleStrict()">ON</button>
+        </div>
+
+        <button class="danger" onclick="logout()">Disconnect Device</button>
+      </div>
+
+      <div class="glass-card">
+        <h3>System Logs</h3>
+        <div id="event-log" style="margin-top: 12px;"></div>
+      </div>
     </div>
   </div>
 
   <script>
-    const API_BASE = ''; // Relative path
     let TOKEN = localStorage.getItem('ag-token');
     let WS = null;
 
     // --- Init ---
     function init() {
-      // DEBUG: Alert to confirm JS running
-      // alert('DEBUG: Init running'); 
-      const savedToken = localStorage.getItem('ag-token');
-      if (savedToken) {
-        logEvent('Found token, loading dashboard...');
-        TOKEN = savedToken;
-        document.getElementById('pairing-view').classList.add('hidden');
-        document.getElementById('dashboard-view').classList.remove('hidden');
-
-        // Execute fetches and catch errors explicitly
-        fetchStatus().catch(e => logEvent('FetchStatus Error: ' + e.message));
-        fetchApprovals().catch(e => logEvent('FetchApprovals Error: ' + e.message));
-        fetchMessages().catch(e => logEvent('FetchMessages Error: ' + e.message));
-        fetchAgentStatus().catch(e => logEvent('FetchAgent Error: ' + e.message));
-
-        connectWS();
+      if (TOKEN) {
+        logEvent('Token loaded. Initializing...');
+        showDashboard();
       } else {
-        // Auto-pair from URL
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get('code');
+        const code = new URLSearchParams(window.location.search).get('code');
         if (code) {
              document.getElementById('code-input').value = code;
-             logEvent('Auto-pairing with code from URL...');
              attemptPair();
              return;
         }
-
-        logEvent('No token found, showing pairing.');
         document.getElementById('pairing-view').classList.remove('hidden');
-        document.getElementById('dashboard-view').classList.add('hidden');
       }
     }
 
-    function showPairing() {
-      document.getElementById('pairing-view').classList.remove('hidden');
-      document.getElementById('dashboard-view').classList.add('hidden');
+    async function switchTab(tabId, btnElement) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btnElement.classList.add('active');
+      
+      if (tabId === 'tab-monitor') fetchMessages();
+      if (tabId === 'tab-chat') {
+          await fetchProjects();
+          await fetchMessages();
+      }
+      if (tabId === 'tab-projects') fetchProjects();
+      if (tabId === 'tab-queue') fetchApprovals();
+      if (tabId === 'tab-settings') fetchStatus();
+    }
+
+    async function jumpToProjectChat(targetId) {
+      if (!targetId || targetId === 'global' || targetId === 'undefined') return;
+      
+      const select = document.getElementById('project-select');
+      if (select) {
+          select.value = targetId;
+      }
+      
+      const chatBtn = document.querySelector(`[onclick="switchTab('tab-chat', this)"]`);
+      if (chatBtn) {
+          await switchTab('tab-chat', chatBtn);
+      }
     }
 
     function showDashboard() {
@@ -462,20 +400,12 @@
       fetchMessages();
       fetchAgentStatus();
       connectWS();
-
-      // Polling Fallback (every 5s)
-      setInterval(() => {
-        fetchMessages();
-        fetchAgentStatus();
-        fetchStatus(); // Also good to keep pending count fresh
-      }, 5000);
+      setInterval(() => { fetchMessages(); fetchAgentStatus(); fetchStatus(); }, 5000);
     }
 
     function logout() {
       localStorage.removeItem('ag-token');
-      TOKEN = null;
-      if (WS) WS.close();
-      window.location.reload();
+      window.location.href = window.location.pathname;
     }
 
     function logEvent(msg) {
@@ -486,229 +416,326 @@
       el.prepend(div);
     }
 
-    // --- Auth ---
+    // --- API & Auth ---
     async function attemptPair() {
       const code = document.getElementById('code-input').value.trim();
-      if (code.length < 6) return alert('Invalid code');
-
+      if (code.length < 6) return alert('Enter 6 digit PIN');
       try {
         const res = await fetch('/pair/claim', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code })
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code })
         });
         const data = await res.json();
-
         if (data.token) {
-          TOKEN = data.token;
-          localStorage.setItem('ag-token', TOKEN);
-          showDashboard();
+          TOKEN = data.token; localStorage.setItem('ag-token', TOKEN); showDashboard();
         } else {
           alert('Pairing failed: ' + (data.error || 'Unknown error'));
         }
-      } catch (e) {
-        alert('Network error: ' + e.message);
-      }
+      } catch (e) { alert('Network error'); }
     }
 
     async function api(path, method = 'GET', body = null) {
       if (!TOKEN) return;
-      const opts = {
-        method,
-        headers: { 'x-ag-token': TOKEN, 'Content-Type': 'application/json' }
-      };
+      const opts = { method, headers: { 'x-ag-token': TOKEN, 'Content-Type': 'application/json' } };
       if (body) opts.body = JSON.stringify(body);
-
       try {
         const res = await fetch(path, opts);
-        if (res.status === 401) {
-          logEvent('API Unauthorized (401) - Logging out');
-          logout();
-          return null;
-        }
-        if (!res.ok) {
-          const txt = await res.text();
-          logEvent(`API Error ${res.status}: ${path} | ${txt}`);
-          return null;
-        }
+        if (res.status === 401) { logout(); return null; }
+        if (!res.ok) return null;
         return res.json();
-      } catch (e) {
-        logEvent('API Fetch Exception: ' + e.message);
-        // alert('API Fail: ' + e.message); // Uncomment if log invisible
-        return null;
-      }
+      } catch (e) { return null; }
     }
 
-    // --- Data ---
-    // --- Chat & Agent ---
+    // --- Fetches ---
     async function fetchMessages() {
-      const data = await api('/messages/inbox?limit=50');
-      if (data && data.messages) {
-        renderMessages(data.messages);
+      // 1. Context Sensitive (Chat Tab)
+      const currentProj = document.getElementById('chat-project-selector').value;
+      let chatUrl = '/messages/inbox?limit=50';
+      if (currentProj && currentProj !== 'global' && currentProj !== 'Global Scope') {
+          chatUrl += `&filterByProject=${encodeURIComponent(currentProj)}`;
       }
+      const chatData = await api(chatUrl);
+      if (chatData && chatData.messages) renderMessages(chatData.messages);
+
+      // 2. Global (Monitor Tab)
+      const globalData = await api('/messages/inbox?limit=100');
+      if (globalData && globalData.messages) renderMonitor(globalData.messages);
+    }
+
+    function renderMonitor(msgs) {
+      const thread = document.getElementById('monitor-thread');
+      if (!thread) return;
+      if (msgs.length === 0) {
+        thread.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No communications yet.</div>';
+        return;
+      }
+      thread.innerHTML = msgs.slice().reverse().map(m => `
+        <div class="msg ${m.from === 'agent' ? 'agent' : 'user'}" style="margin-right: auto; margin-left: 0; max-width: 100%; border-bottom-left-radius: 4px; border-bottom-right-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);">
+          <div class="msg-meta">
+             <span style="color: var(--primary); font-weight: bold; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat('${escapeHtml(m.targetId)}')">[${escapeHtml(m.targetId || 'global')}]</span>
+             <span>${m.from}</span>
+             <span>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+          </div>
+          <div>${escapeHtml(m.text)}</div>
+        </div>
+      `).join('');
+      thread.scrollTop = thread.scrollHeight;
     }
 
     async function fetchAgentStatus() {
       const data = await api('/agent/status');
       if (data && data.agent) {
-        updateAgentUI(data.agent);
+        const pill = document.getElementById('agent-status-pill');
+        pill.innerText = `Agent: ${data.agent.state.toUpperCase()}`;
+        pill.className = `agent-status ${data.agent.state}`;
+        
+        const taskBlock = document.getElementById('agent-active-task');
+        const taskLabel = document.getElementById('agent-task-label') || taskBlock.querySelector('strong');
+        const taskText = document.getElementById('agent-task-text');
+        
+        if (data.agent.state !== 'idle' && data.agent.task) {
+          taskBlock.style.display = 'block';
+          taskBlock.style.background = 'rgba(56, 189, 248, 0.1)';
+          taskBlock.style.borderColor = 'rgba(56, 189, 248, 0.2)';
+          if (taskLabel) {
+              taskLabel.innerText = 'Current Task:';
+              taskLabel.style.color = 'white';
+          }
+          taskText.innerText = data.agent.task + (data.agent.note ? ` (${data.agent.note})` : '');
+        } else if (data.agent.state === 'idle' && (data.agent.note || data.agent.task)) {
+          taskBlock.style.display = 'block';
+          taskBlock.style.background = 'rgba(16, 185, 129, 0.1)';
+          taskBlock.style.borderColor = 'rgba(16, 185, 129, 0.2)';
+          if (taskLabel) {
+              taskLabel.innerText = 'Idle / Result:';
+              taskLabel.style.color = 'var(--success)';
+          }
+          taskText.innerText = data.agent.note || data.agent.task;
+        } else {
+          taskBlock.style.display = 'none';
+        }
       }
     }
 
-    function renderMessages(msgs) {
-      const thread = document.getElementById('chat-thread');
-      if (msgs.length === 0) {
-        thread.innerHTML = '<div style="text-align:center; color:#666; padding:20px;">No messages</div>';
-        return;
+    async function fetchProjects() {
+      const data = await api('/projects');
+      const grid = document.getElementById('projects-grid');
+      const selector = document.getElementById('chat-project-selector');
+      
+      let currentSelectionTitle = 'global';
+      if (data && data.selectedProject && data.selectedProject !== 'global') {
+          currentSelectionTitle = typeof data.selectedProject === 'string' ? data.selectedProject : (data.selectedProject.title || data.selectedProject.id);
       }
 
-      thread.innerHTML = msgs.slice().reverse().map(m => {
-        const time = new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        return `
-          <div class="msg ${m.from === 'agent' ? 'agent' : 'user'}">
-            <div class="msg-meta">
-              <span>${m.from.toUpperCase()}</span>
-              <span>${time}</span>
+      if (data) {
+        let optionsHtml = '<option value="global" style="color: black;">Global Scope</option>';
+        if (data.activeWindows) {
+            data.activeWindows.forEach(w => {
+                optionsHtml += `<option value="${escapeHtml(w.title)}" style="color: black;">🟢 ${escapeHtml(w.title)}</option>`;
+            });
+        }
+        if (data.projects) {
+            data.projects.forEach(p => {
+                if (!data.activeWindows || !data.activeWindows.find(w => w.title.includes(p))) {
+                    optionsHtml += `<option value="${escapeHtml(p)}" style="color: black;">📁 ${escapeHtml(p)}</option>`;
+                }
+            });
+        }
+        if (selector) {
+            selector.innerHTML = optionsHtml;
+            selector.value = currentSelectionTitle;
+        }
+      }
+
+      if (data && data.projects) {
+        let html = '';
+        
+        // Active Windows section
+        if (data.activeWindows && data.activeWindows.length > 0) {
+          html += '<h4 style="margin: 0 0 10px 0; color: var(--success);">Active IDE Windows</h4>';
+          html += data.activeWindows.map(w => {
+            const isSelected = data.selectedProject && ((data.selectedProject.id && data.selectedProject.id === w.id) || (typeof data.selectedProject === 'string' && w.title.includes(data.selectedProject)));
+            const style = isSelected ? 'border-color: var(--success); box-shadow: 0 0 10px rgba(16,185,129,0.2);' : '';
+            // Pass w.id or w.title safely as a string
+            const safeTitle = w.title.replace(/'/g, "\\'");
+            return `
+            <div class="project-card" style="${style}" onclick="selectProject('${safeTitle}')">
+              <div class="project-icon" style="background: var(--success);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+              </div>
+              <div>
+                <div style="font-weight: 600; font-size: 15px; color: white;">${escapeHtml(w.title)}</div>
+                <div style="font-size: 12px; color: var(--success); margin-top: 4px;">Port ${w.port} &bull; Connected</div>
+              </div>
             </div>
-            <div>${escapeHtml(m.text)}</div>
-          </div>
-        `;
-      }).join('');
+            `;
+          }).join('');
+          html += '<div style="height: 16px;"></div>';
+        }
 
-      // Auto-scroll to bottom
-      thread.scrollTop = thread.scrollHeight;
+        html += '<h4 style="margin: 0 0 10px 0; color: var(--text-dim);">All Local Workspaces</h4>';
+        if (data.projects.length === 0) {
+          html += '<div style="padding:20px; text-align:center;">No workspaces found.</div>';
+        } else {
+          html += data.projects.map(p => {
+            const isSelected = typeof data.selectedProject === 'string' ? data.selectedProject === p : (data.selectedProject && data.selectedProject.title === p);
+            const style = isSelected ? 'border-color: var(--primary); background: rgba(56, 189, 248, 0.1);' : '';
+            return `
+            <div class="project-card" style="${style}" onclick="selectProject('${p}')">
+              <div class="project-icon">${p.substring(0,1).toUpperCase()}</div>
+              <div>
+                <div style="font-weight: 600; font-size: 16px;">${p}</div>
+                <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Workspace</div>
+              </div>
+            </div>
+            `;
+          }).join('');
+        }
+        grid.innerHTML = html;
+      }
     }
 
-    function updateAgentUI(agent) {
-      const pill = document.getElementById('agent-status-pill');
-      pill.innerText = `Agent: ${agent.state.toUpperCase()}`;
-      pill.className = `agent-status ${agent.state}`;
+    async function selectProject(target) {
+      let payload = target;
+      let displayTitle = '';
+      
+      if (typeof target === 'string') {
+          payload = target.replace(' - Visual Studio Code', '');
+          displayTitle = payload;
+      } else if (target && target.title) {
+          displayTitle = target.title.replace(' - Visual Studio Code', '');
+      } else {
+          displayTitle = 'Global Scope';
+      }
+
+      await api('/projects/select', 'POST', { project: payload });
+      
+      // Switch to Chat Tab automatically
+      const chatBtns = document.querySelectorAll('.tab-btn');
+      switchTab('tab-chat', chatBtns[1]);
+      
+      await fetchProjects();
+      await fetchMessages();
     }
 
-    async function sendChat() {
-      const input = document.getElementById('chat-input');
-      const text = input.value.trim();
-      if (!text) return;
-
-      // Optimistic UI update could go here, but let's wait for WS/ACK for simplicity
-      await api('/messages/send', 'POST', {
-        to: 'agent',
-        channel: 'work',
-        text: text
-      });
-
-      input.value = '';
-    }
-
-    function sendQuick(text) {
-      document.getElementById('chat-input').value = text;
-      sendChat();
-    }
-
-    function handleEnter(e) {
-      if (e.key === 'Enter') sendChat();
-    }
-
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.innerText = text;
-      return div.innerHTML;
-    }
-
-    // --- Data ---
     async function fetchStatus() {
       const data = await api('/status');
       if (data && data.ok) {
         document.getElementById('pending-count').innerText = data.pendingApprovals;
-        updateStrictUI(data.strictMode);
+        const btn = document.getElementById('strict-btn');
+        btn.innerText = data.strictMode ? 'ON' : 'OFF';
+        btn.style.color = data.strictMode ? 'var(--success)' : 'var(--danger)';
       }
     }
 
-    // fetchStatus defined below with strict mode support
     async function fetchApprovals() {
       const data = await api('/approvals');
       if (data && data.approvals) {
-        renderApprovals(data.approvals);
+        const container = document.getElementById('approvals-list');
+        if (data.approvals.length === 0) {
+          container.innerHTML = '<p style="text-align:center; color:var(--text-dim); padding: 20px;">No pending approvals.</p>';
+          return;
+        }
+        container.innerHTML = data.approvals.map(item => `
+          <div class="glass-card approval-item status-${item.status}">
+            <div class="flex justify-between items-center mb-4">
+              <span class="tag ${item.status}">${item.status}</span>
+              <span style="font-size:11px; color:var(--text-dim)">${new Date(item.createdAt).toLocaleTimeString()}</span>
+            </div>
+            <div style="font-weight:600; margin-bottom: 8px;">
+              <span style="color: var(--primary); cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat('${escapeHtml(item.meta && item.meta.clientTag ? item.meta.clientTag : '')}')">[${escapeHtml(item.meta && item.meta.clientTag ? item.meta.clientTag : 'global')}]</span>
+              ${item.kind.toUpperCase()}
+            </div>
+            <pre>${JSON.stringify(item.details, null, 2)}</pre>
+            ${item.status === 'pending' ? `
+              <div class="flex gap-4 mt-4">
+                <button class="danger" onclick="api('/approvals/${item.id}/deny', 'POST').then(() => fetchApprovals())">Deny</button>
+                <button class="success" onclick="api('/approvals/${item.id}/approve', 'POST').then(() => fetchApprovals())">Approve</button>
+              </div>
+            ` : ''}
+          </div>
+        `).join('');
       }
     }
 
-    function renderApprovals(list) {
-      const container = document.getElementById('approvals-list');
-      if (list.length === 0) {
-        container.innerHTML = '<p style="text-align:center; padding: 20px;">No approvals found.</p>';
+    // --- Chat Logic ---
+    function renderMessages(msgs) {
+      const thread = document.getElementById('chat-thread');
+      if (msgs.length === 0) {
+        thread.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No messages yet.</div>';
         return;
       }
-
-      container.innerHTML = list.map(item => `
-        <div class="card approval-item status-${item.status}">
-          <div class="flex justify-between items-center mb-4">
-            <span class="tag ${item.status}">${item.status}</span>
-            <span style="font-size:12px; color:var(--text-dim)">${new Date(item.createdAt).toLocaleTimeString()}</span>
-          </div>
-          <div style="font-weight:bold; margin-bottom: 4px;">${item.kind}</div>
-          <pre>${JSON.stringify(item.details, null, 2)}</pre>
-          
-          ${item.status === 'pending' ? `
-            <div class="flex gap-2 mt-4">
-              <button class="danger" onclick="decide('${item.id}', 'deny')">Deny</button>
-              <button class="success" onclick="decide('${item.id}', 'approve')">Approve</button>
-            </div>
+      thread.innerHTML = msgs.slice().reverse().map(m => `
+        <div class="msg ${m.from === 'agent' ? 'agent' : 'user'}">
+          <div class="msg-meta"><span>${m.from}</span><span>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
+          <div>${escapeHtml(m.text)}</div>
+          ${m.approvalId ? `
+              <div style="margin-top: 8px; display: flex; gap: 6px;">
+                 <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', false)">Approve</button>
+                 <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', true)">Allow Always</button>
+                 <button class="danger" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'deny')">Deny</button>
+              </div>
           ` : ''}
         </div>
       `).join('');
+      thread.scrollTop = thread.scrollHeight;
     }
 
-    async function decide(id, decision) {
-      const res = await api(`/approvals/${id}/${decision}`, 'POST');
-      if (res && res.ok) {
-        fetchApprovals();
-        fetchStatus();
+    async function handleApprovalAction(id, action, always = false) {
+      const res = await api(`/approvals/${id}/${action}`, 'POST', { always });
+      if (res && res.error === 'already_decided') {
+          alert('This approval has already been decided.');
       } else {
-        alert('Action failed');
+          // Add a local message indicating it was decided
+          await api('/messages/send', 'POST', { to: 'user', channel: 'system', text: `Approval ${id} was ${action}d.` });
+          fetchMessages();
       }
+      fetchApprovals();
     }
-
-    async function createTestApproval() {
-      await api('/debug/create-approval', 'POST', {
-        kind: 'test_action',
-        details: { msg: 'This is a test from the dashboard', risk: 'none' }
-      });
+    
+    async function sendChat() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      
+      const currentProj = document.getElementById('chat-project-selector').value;
+      let projectStr = undefined;
+      if (currentProj && currentProj !== 'global' && currentProj !== 'Global Scope') {
+          projectStr = currentProj;
+      }
+      
+      await api('/messages/send', 'POST', { to: 'agent', channel: 'work', text, project: projectStr });
+      input.value = '';
     }
-
-    async function requestRealApproval() {
-      await api('/approvals/request', 'POST', {
-        kind: 'command',
-        details: { cmd: 'pnpm test', cwd: '.', risk: 'yellow' },
-        risk: 'yellow',
-        clientTag: 'dashboard_manual'
-      });
-    }
+    function sendQuick(text) { document.getElementById('chat-input').value = text; sendChat(); }
+    function handleEnter(e) { if (e.key === 'Enter') sendChat(); }
+    function escapeHtml(text) { const div = document.createElement('div'); div.innerText = text; return div.innerHTML; }
 
     async function toggleStrict() {
-      // Optimistic toggle
-      const btn = document.getElementById('strict-btn');
-      const isStrict = btn.innerText.includes('ON');
-      const newState = !isStrict;
-
-      const res = await api('/config/strict-mode', 'POST', { strictMode: newState });
-      if (res && res.ok) {
-        updateStrictUI(res.strictMode);
-      } else {
-        alert('Failed to toggle strict mode');
-      }
+      const isStrict = document.getElementById('strict-btn').innerText === 'ON';
+      await api('/config/strict-mode', 'POST', { strictMode: !isStrict });
+      fetchStatus();
+    }
+    async function requestRealApproval() {
+      await api('/approvals/request', 'POST', { kind: 'command', details: { cmd: 'test demo', risk: 'low' }, clientTag: 'demo' });
     }
 
-    function updateStrictUI(isStrict) {
-      const btn = document.getElementById('strict-btn');
-      if (isStrict) {
-        btn.innerText = 'Strict: ON';
-        btn.style.borderColor = 'var(--success)';
-        btn.style.color = 'var(--success)';
-      } else {
-        btn.innerText = 'Strict: OFF';
-        btn.style.borderColor = 'var(--danger)';
-        btn.style.color = 'var(--danger)';
-      }
+    let audioCtx = null;
+    function playPing() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.1);
+        gain.gain.setValueAtTime(1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+      } catch (e) { console.error('Audio play failed', e); }
     }
 
     // --- WebSocket ---
@@ -716,58 +743,29 @@
       if (!TOKEN) return;
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       WS = new WebSocket(`${proto}://${window.location.host}/events?token=${TOKEN}`);
-
-      WS.onopen = () => {
-        document.getElementById('ws-status').classList.add('connected');
-        logEvent('WS Connected');
-      };
-
+      WS.onopen = () => { document.getElementById('ws-status').classList.add('connected'); logEvent('WS Connected'); };
       WS.onmessage = (msg) => {
         try {
           const data = JSON.parse(msg.data);
-          logEvent(`Event: ${data.event}`);
-
-          if (data.event === 'approval_requested' || data.event === 'approval_decided') {
-            fetchApprovals();
-            fetchStatus();
+          if (data.event === 'approval_requested') {
+              playPing();
+              fetchApprovals();
           }
-          if (data.event === 'config_changed') {
-            updateStrictUI(data.payload.strictMode);
-          }
-          if (data.event === 'message_new') {
-            logEvent('New message received');
-            fetchMessages();
-          }
-          if (data.event === 'agent_status') {
-            updateAgentUI(data.payload);
-          }
-        } catch (e) { console.error('WS Error:', e); }
+          if (data.event === 'approval_decided') fetchApprovals();
+          if (data.event === 'message_new') fetchMessages();
+          if (data.event === 'agent_status') fetchAgentStatus();
+        } catch (e) {}
       };
-
-      WS.onerror = (e) => {
-        console.error('WebSocket Error:', e);
-        logEvent('WS Error: ' + JSON.stringify(e));
-      };
-
-      WS.onclose = (e) => {
-        document.getElementById('ws-status').classList.remove('connected');
-        logEvent(`WS Closed (Code: ${e.code}). Reconnecting...`);
-        setTimeout(connectWS, 3000);
-      };
+      WS.onclose = () => { document.getElementById('ws-status').classList.remove('connected'); setTimeout(connectWS, 3000); };
     }
 
-    // Debug: Expose for console access
-    window.debugApi = api;
-    window.debugToken = () => TOKEN;
+    // Attempt to resume AudioContext on first tap anywhere
+    document.body.addEventListener('click', () => {
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    }, { once: true });
 
-    // Start
     init();
-
-    // SW
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(console.error);
-    }
   </script>
+  <div id="app-version" class="version-badge"></div>
 </body>
-
 </html>

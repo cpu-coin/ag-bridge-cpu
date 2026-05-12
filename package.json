@@ -1,12 +1,13 @@
 {
   "name": "ag-bridge",
-  "version": "0.6.5",
+  "version": "1.0.0",
   "description": "LAN-only companion app for agent supervision",
   "main": "server.mjs",
   "type": "module",
   "bin": "./bin/install.mjs",
   "scripts": {
     "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
     "test": "vitest run",
     "check:bidi": "node scripts/check-bidi.mjs",
     "precommit": "node scripts/precommit.mjs"

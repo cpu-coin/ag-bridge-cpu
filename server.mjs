@@ -7,7 +7,9 @@ import { mkdir, readFile, writeFile, rename, appendFile } from 'fs/promises';
 import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-const APP_VERSION = '0.6.5';
+import { getAllTargets, pokeTarget } from './connectors/index.mjs';
+
+const APP_VERSION = '1.0.1';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const LOGS_DIR = join(__dirname, '.logs');
@@ -56,38 +58,58 @@ async function runPokeScript() {
         log('POKE', `Injecting ${pendingMsgs.length} messages. Total length: ${msgText.length}`);
     }
 
-    const env = { ...process.env, AG_POKE_MESSAGE: msgText };
+    // 1. Resolve Target
+    let target = STATE.targetProject;
+    if (!target || target === 'global') {
+        // Fallback to first available target
+        const targets = await getAllTargets();
+        target = targets[0] || null;
+    } else if (typeof target === 'string') {
+        // Handle case where target is a string from UI
+        const targets = await getAllTargets();
+        const found = targets.find(t => t.title.includes(target) || t.id === target);
+        if (found) {
+            target = found;
+            STATE.targetProject = found; // Update state
+        } else {
+            target = null;
+        }
+    } else if (!target.webSocketDebuggerUrl && target.title) {
+        // Try to re-resolve the target if it was stored without CDP info
+        const targets = await getAllTargets();
+        const found = targets.find(t => t.title.includes(target.title) || t.id === target.id);
+        if (found) {
+            target = found;
+            STATE.targetProject = found; // Update state with resolved CDP info
+        }
+    }
 
-    return new Promise((resolve) => {
-        const child = spawn('node', ['scripts/poke.mjs'], { cwd: process.cwd(), shell: true, env });
-        let stdout = '';
-        child.stdout.on('data', d => stdout += d);
-        child.on('close', () => {
-            try {
-                const res = JSON.parse(stdout);
-                log('POKE', 'Script result', res);
+    if (!target) {
+        log('POKE', 'Failed: No targets found across any connectors.');
+        return { ok: false, error: 'no_targets' };
+    }
 
-                // If successful, mark ALL messages as poked
-                if (res.ok && pendingMsgs.length > 0) {
-                    pendingMsgs.forEach(m => {
-                        m.status = 'poked';
-                        broadcast('message_ack', { id: m.id, status: 'poked' });
-                    });
-                    saveState();
-                    log('POKE', `Marked ${pendingMsgs.length} messages as poked.`);
-                }
+    log('POKE', `Routing poke to ${target.connectorId} plugin -> ${target.title}`);
 
-                resolve(res);
-            } catch {
-                log('POKE', 'Parse error', { stdout });
-                resolve({ ok: false, error: 'parse_error', stdout });
-            }
-        });
-        child.on('error', (err) => {
-            log('POKE', 'Spawn error', err.message);
-            resolve({ ok: false, error: 'spawn_error', details: err.message });
-        });
-    });
+    // 2. Execute Plugin
+    try {
+        const res = await pokeTarget(target, msgText);
+        log('POKE', 'Plugin result', res);
+
+        // If successful, mark ALL messages as poked
+        if (res.ok && pendingMsgs.length > 0) {
+            pendingMsgs.forEach(m => {
+                m.status = 'poked';
+                broadcast('message_ack', { id: m.id, status: 'poked' });
+            });
+            saveState();
+            log('POKE', `Marked ${pendingMsgs.length} messages as poked.`);
+        }
+        return res;
+    } catch (err) {
+        log('POKE', 'Plugin error', err.message);
+        return { ok: false, error: 'plugin_error', details: err.message };
+    }
 }
 
 function stopRetry() {
@@ -182,7 +204,15 @@ let TOKENS = new Set(); // Loaded from STATE.tokens
 
 // --- Helpers ---
 function generateCode() {
-    return Math.floor(100000 + Math.random() * 900000).toString();
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    try {
+        const { writeFileSync } = require('fs');
+        writeFileSync(join(DATA_DIR, 'code.txt'), code);
+    } catch (e) {
+        // use dynamic import for fs/promises if sync fails in module
+        import('fs/promises').then(fs => fs.writeFile(join(DATA_DIR, 'code.txt'), code)).catch(()=>{});
+    }
+    return code;
 }
 
 function generateToken() {
@@ -207,17 +237,25 @@ function getLocalIPs() {
 }
 
 function getTailscaleInfo() {
-    try {
-        const stdout = execSync('tailscale status --json', { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
-        const status = JSON.parse(stdout);
-        if (status.BackendState === 'Running') {
-            const dnsName = status.Self.DNSName;
-            const name = dnsName ? dnsName.replace(/\.$/, '') : null;
-            const ips = status.TailscaleIPs || [];
-            return { name, ips };
+    // Try standard PATH first, then fallback to Mac App Store location
+    const cmds = [
+        'tailscale status --json',
+        '/Applications/Tailscale.app/Contents/MacOS/Tailscale status --json'
+    ];
+    
+    for (const cmd of cmds) {
+        try {
+            const stdout = execSync(cmd, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] });
+            const status = JSON.parse(stdout);
+            if (status.BackendState === 'Running') {
+                const dnsName = status.Self.DNSName;
+                const name = dnsName ? dnsName.replace(/\.$/, '') : null;
+                const ips = status.TailscaleIPs || [];
+                return { name, ips };
+            }
+        } catch (e) {
+            // continue to next cmd
         }
-    } catch (e) {
-        return null;
     }
     return null;
 }
@@ -412,11 +450,41 @@ app.get('/health', (req, res) => {
     res.json({ ok: true, name: "ag_bridge", version: APP_VERSION, ts: new Date().toISOString() });
 });
 
+app.get('/debug/code', (req, res) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') {
+        res.json({ code: PAIRING_CODE });
+    } else {
+        res.status(403).json({ error: 'localhost_only' });
+    }
+});
+
+const claimAttempts = new Map();
 app.post('/pair/claim', (req, res) => {
+    const ip = req.ip || req.connection.remoteAddress;
+    const now = Date.now();
+    const attempt = claimAttempts.get(ip) || { count: 0, time: now };
+    
+    // Reset after 10 minutes
+    if (now - attempt.time > 10 * 60 * 1000) {
+        attempt.count = 0;
+        attempt.time = now;
+    }
+    
+    attempt.count++;
+    claimAttempts.set(ip, attempt);
+    
+    if (attempt.count > 10) {
+        return res.status(429).json({ error: 'too_many_attempts', message: 'Please wait 10 minutes before trying again.' });
+    }
+
     const { code } = req.body;
     if (!code || code !== PAIRING_CODE) {
         return res.status(403).json({ error: 'invalid_code' });
     }
+    // Success - clear attempts
+    claimAttempts.delete(ip);
+    
     const token = generateToken();
     TOKENS.add(token);
     saveState(); // Save new token
@@ -449,8 +517,9 @@ app.get('/approvals', requireAuth, (req, res) => {
     res.json({ approvals: sorted });
 });
 
-app.post('/approvals/:id/approve', requireAuth, (req, res) => {
+app.post('/approvals/:id/approve', requireAuth, async (req, res) => {
     const { id } = req.params;
+    const { always } = req.body || {};
     const approval = STATE.approvals.find(a => a.id === id);
     if (!approval) return res.status(404).json({ error: 'not_found' });
 
@@ -460,6 +529,20 @@ app.post('/approvals/:id/approve', requireAuth, (req, res) => {
 
     approval.status = 'approved';
     approval.decidedAt = new Date().toISOString();
+    
+    // Allow Always Logic
+    if (always && approval.details && approval.details.cmd) {
+        const cmdPattern = "^" + approval.details.cmd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + "$";
+        const profileName = STATE.strictMode ? 'balanced' : 'relaxed';
+        if (!POLICY.profiles) POLICY.profiles = { balanced: { allow: [] }, relaxed: { allow: [] } };
+        if (!POLICY.profiles[profileName]) POLICY.profiles[profileName] = { allow: [] };
+        if (!POLICY.profiles[profileName].allow.includes(cmdPattern)) {
+            POLICY.profiles[profileName].allow.push(cmdPattern);
+            await writeFile(POLICY_FILE, JSON.stringify(POLICY, null, 2));
+            console.log(`[POLICY] Added ${cmdPattern} to ${profileName} allowlist`);
+        }
+    }
+
     saveApprovals();
 
     console.log(`[APPROVAL] ${id} APPROVED`);
@@ -498,8 +581,27 @@ app.post('/debug/create-approval', requireAuth, (req, res) => {
 
     STATE.approvals.push(newApproval);
     saveApprovals();
+
+    const targetId = STATE.targetProject?.id || STATE.targetProject?.title || (typeof STATE.targetProject === 'string' ? STATE.targetProject : 'global');
+    const msgText = kind === 'command' ? `Approval Required: ${details?.cmd}` : `Approval Required: ${kind}`;
+    const msg = {
+        id: 'msg_appr_' + newApproval.id,
+        createdAt: newApproval.createdAt,
+        from: 'agent',
+        to: 'user',
+        channel: 'approval',
+        text: msgText,
+        status: 'new',
+        targetId: targetId,
+        approvalId: newApproval.id
+    };
+    STATE.messages.push(msg);
+    if (STATE.messages.length > 200) STATE.messages.shift();
+    saveState();
+
     console.log(`[DEBUG] Created test approval ${newApproval.id}`);
     broadcast('approval_requested', newApproval);
+    broadcast('message_new', msg);
     res.json(newApproval);
 });
 
@@ -508,11 +610,21 @@ app.post('/debug/create-approval', requireAuth, (req, res) => {
 // POST /messages/send
 app.post('/messages/send', checkAuth, (req, res) => {
     console.log('[DEBUG] HEX DUMP /messages/send body:', JSON.stringify(req.body));
-    const { to, channel, text } = req.body;
+    const { to, channel, text, project } = req.body;
     let { from } = req.body;
     from = from || 'user'; // Default to user if missing
 
     if (!to || !text) return res.status(400).json({ ok: false, error: 'missing_fields' });
+
+    let defaultTargetId = 'global';
+    if (STATE.targetProject) {
+        if (typeof STATE.targetProject === 'string') {
+            defaultTargetId = STATE.targetProject;
+        } else if (STATE.targetProject.title) {
+            defaultTargetId = STATE.targetProject.title.replace(' - Visual Studio Code', '');
+        }
+    }
+    const targetId = project || defaultTargetId;
 
     const msg = {
         id: 'msg_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
@@ -521,7 +633,8 @@ app.post('/messages/send', checkAuth, (req, res) => {
         to, // 'agent' or 'user'
         channel: channel || 'general',
         text: (from === 'user' ? '[Mobile] ' : '') + text,
-        status: 'new'
+        status: 'new',
+        targetId
     };
 
     STATE.messages.push(msg);
@@ -541,11 +654,19 @@ app.post('/messages/send', checkAuth, (req, res) => {
 
 // GET /messages/inbox
 app.get('/messages/inbox', checkAuth, (req, res) => {
-    const { to, status, limit } = req.query;
+    const { to, status, limit, filterByProject } = req.query;
     let items = STATE.messages;
 
     if (to) items = items.filter(m => m.to === to);
     if (status) items = items.filter(m => m.status === status);
+    if (filterByProject) {
+        items = items.filter(m => {
+            if (!m.targetId) return false;
+            return m.targetId === filterByProject || 
+                   filterByProject.endsWith(m.targetId) || 
+                   m.targetId.endsWith(filterByProject);
+        });
+    }
 
     // Sort newest first
     items = [...items].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -590,6 +711,42 @@ app.post('/agent/heartbeat', checkAuth, (req, res) => {
 // GET /agent/status
 app.get('/agent/status', checkAuth, (req, res) => {
     res.json({ ok: true, agent: STATE.agent });
+});
+
+// GET /projects
+app.get('/projects', checkAuth, async (req, res) => {
+    try {
+        // Assume projects are stored in the parent directory of ag_bridge
+        const projectsDir = dirname(__dirname);
+        const { readdir } = await import('fs/promises');
+        const items = await readdir(projectsDir, { withFileTypes: true });
+        const projects = items
+            .filter(dirent => dirent.isDirectory() && !dirent.name.startsWith('.'))
+            .map(dirent => dirent.name);
+            
+        // Use Plugin Architecture to scan for Active Windows
+        const activeWindows = await getAllTargets();
+        
+        res.json({ ok: true, projects, activeWindows, selectedProject: STATE.targetProject });
+    } catch (err) {
+        res.status(500).json({ ok: false, error: err.message });
+    }
+});
+
+// POST /projects/select
+app.post('/projects/select', checkAuth, async (req, res) => {
+    const { project } = req.body;
+    if (!project) {
+        STATE.targetProject = null;
+    } else if (typeof project === 'string') {
+        const targets = await getAllTargets();
+        const found = targets.find(t => t.id === project || t.title.includes(project) || t.url?.includes(project));
+        STATE.targetProject = found || { title: project, connectorId: 'antigravity' };
+    } else {
+        STATE.targetProject = project;
+    }
+    saveState();
+    res.json({ ok: true, selectedProject: STATE.targetProject });
 });
 
 // GET /status (Observability)
@@ -662,8 +819,29 @@ app.post('/approvals/request', checkAuth, (req, res) => {
 
     STATE.approvals.push(newApproval);
     saveApprovals(); // Changed from saveState()
+
+    // Inject message for the chat thread
+    const targetId = req.body.project || STATE.targetProject?.id || STATE.targetProject?.title || (typeof STATE.targetProject === 'string' ? STATE.targetProject : 'global');
+    const msgText = kind === 'command' ? `Approval Required: ${details?.cmd}` : `Approval Required: ${kind}`;
+    
+    const msg = {
+        id: 'msg_appr_' + newApproval.id,
+        createdAt: newApproval.createdAt,
+        from: 'agent',
+        to: 'user',
+        channel: 'approval',
+        text: msgText,
+        status: 'new',
+        targetId: targetId,
+        approvalId: newApproval.id
+    };
+    STATE.messages.push(msg);
+    if (STATE.messages.length > 200) STATE.messages.shift();
+    saveState();
+
     console.log(`[REQUEST] Approval requested: ${newApproval.id} (${kind})`);
     broadcast('approval_requested', newApproval);
+    broadcast('message_new', msg);
     res.json({ ok: true, approval: newApproval });
 });
 
@@ -781,6 +959,18 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
                     const url = `http://${ts.name}:${PORT}`;
                     console.log(` ${url}`);
                     qrUrl = url; // Priority 1: Tailscale DNS
+                    
+                    // Auto-provision HTTPS
+                    try {
+                        const tsCmd = require('fs').existsSync('/Applications/Tailscale.app/Contents/MacOS/Tailscale') 
+                            ? '/Applications/Tailscale.app/Contents/MacOS/Tailscale' 
+                            : 'tailscale';
+                        require('child_process').execSync(`${tsCmd} serve --bg ${PORT}`, { stdio: 'ignore' });
+                        console.log(` https://${ts.name}  (Secure HTTPS Active)`);
+                        qrUrl = `https://${ts.name}`; // Prefer secure for QR
+                    } catch (e) {
+                        // Tailscale HTTPS not enabled on account
+                    }
                 }
                 ts.ips.forEach(ip => {
                     const url = `http://${ip}:${PORT}`;
