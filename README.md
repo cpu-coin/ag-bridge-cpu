@@ -45,6 +45,15 @@ You will see a **Pairing Code**, local IP address, and (if Tailscale is active) 
 3. Enter the Pairing Code.
 4. Select your active Workspace and chat away!
 
+## ⚠️ Important Note on Two-Way Chat (CDP vs. AppleScript)
+By default, AG Bridge uses an **AppleScript fallback** to type your mobile messages into the correct Antigravity Desktop window. While this guarantees your messages are delivered reliably, **AppleScript is blind**—it cannot read the AI's replies back out of the chat window. 
+
+If you want the agent's replies to stream back to your phone (Two-Way Chat), you **must** launch the Antigravity Desktop App from your terminal with the Chrome DevTools Protocol (CDP) port open:
+```bash
+/Applications/Antigravity.app/Contents/MacOS/Electron --remote-debugging-port=9000
+```
+*(You can use ports 9000, 9001, 9002, or 9003. The bridge scans these automatically to read the chat history DOM).*
+
 ## Remote Access (Built-In) ☁️
 AG Bridge is designed with **first-class Tailscale integration** for secure remote access:
 - **Auto-HTTPS**: When you run `npm start`, the bridge automatically detects Tailscale and runs `tailscale serve --bg 8787` to provision a secure Let's Encrypt SSL certificate. 
