@@ -119,7 +119,7 @@ export async function poke(target, messageContent) {
                 const safeMsg = messageContent.replace(/"/g, '\\"').replace(/\n/g, '\\n');
                 
                 // We target the Antigravity Desktop App environments directly
-                const appName = 'Electron'; // Defaults to Electron which is running the Antigravity UI
+                const appName = 'Antigravity'; 
                 
                 const script = `
                     tell application "${appName}"
