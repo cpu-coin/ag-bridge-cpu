@@ -112,6 +112,33 @@ const makePokeExpression = (messageContent) => `(async () => {
 
 export async function poke(target, messageContent) {
     if (!target || !target.webSocketDebuggerUrl) {
+        // Fallback to AppleScript on macOS if CDP is not available
+        if (process.platform === 'darwin') {
+            try {
+                const { execSync } = await import('child_process');
+                const safeMsg = messageContent.replace(/"/g, '\\"').replace(/\n/g, '\\n');
+                
+                // We target the Antigravity Desktop App environments directly
+                const appName = 'Electron'; // Defaults to Electron which is running the Antigravity UI
+                
+                const script = `
+                    tell application "${appName}"
+                        activate
+                        delay 0.1
+                        tell application "System Events"
+                            keystroke "${safeMsg}"
+                            delay 0.1
+                            keystroke return
+                        end tell
+                    end tell
+                `;
+                execSync(`osascript -e '${script}'`);
+                return { ok: true, method: "applescript_fallback" };
+            } catch (e) {
+                console.warn("[POKE] AppleScript fallback failed (needs Accessibility permissions in System Settings).", e.message);
+                return { ok: false, error: "applescript_fallback_failed", details: e.message };
+            }
+        }
         return { ok: false, error: "cdp_not_found" };
     }
 
