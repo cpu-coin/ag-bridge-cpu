@@ -570,14 +570,19 @@
             const style = isSelected ? 'border-color: var(--success); box-shadow: 0 0 10px rgba(16,185,129,0.2);' : '';
             // Pass w.id or w.title safely as a string
             const safeTitle = w.title.replace(/'/g, "\\'");
+            const lastActive = data.activity && data.activity[w.title] ? new Date(data.activity[w.title]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Just now';
             return `
             <div class="project-card" style="${style}" onclick="selectProject('${safeTitle}')">
               <div class="project-icon" style="background: var(--success);">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
               </div>
-              <div>
+              <div style="flex: 1;">
                 <div style="font-weight: 600; font-size: 15px; color: white;">${escapeHtml(w.title)}</div>
-                <div style="font-size: 12px; color: var(--success); margin-top: 4px;">Port ${w.port} &bull; Connected</div>
+                <div style="font-size: 12px; color: var(--success); margin-top: 4px;">Active Window</div>
+              </div>
+              <div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.7;">
+                <div>Active</div>
+                <div>${lastActive}</div>
               </div>
             </div>
             `;
@@ -592,12 +597,17 @@
           html += data.projects.map(p => {
             const isSelected = typeof data.selectedProject === 'string' ? data.selectedProject === p : (data.selectedProject && data.selectedProject.title === p);
             const style = isSelected ? 'border-color: var(--primary); background: rgba(56, 189, 248, 0.1);' : '';
+            const lastActive = data.activity && data.activity[p] ? new Date(data.activity[p]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
             return `
             <div class="project-card" style="${style}" onclick="selectProject('${p}')">
               <div class="project-icon">${p.substring(0,1).toUpperCase()}</div>
-              <div>
+              <div style="flex: 1;">
                 <div style="font-weight: 600; font-size: 16px;">${p}</div>
                 <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Workspace</div>
+              </div>
+              <div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.6;">
+                <div>Last Edit</div>
+                <div>${lastActive}</div>
               </div>
             </div>
             `;

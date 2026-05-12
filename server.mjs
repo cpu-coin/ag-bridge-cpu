@@ -829,7 +829,7 @@ app.get('/projects', checkAuth, async (req, res) => {
             return new Date(tB).getTime() - new Date(tA).getTime();
         });
         
-        res.json({ ok: true, projects, activeWindows, selectedProject: STATE.targetProject });
+        res.json({ ok: true, projects, activeWindows, activity: projectActivity, selectedProject: STATE.targetProject });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
     }
