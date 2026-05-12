@@ -24,24 +24,12 @@ const OUTBOX_NAMESPACE = 'ag_bridge/outbox';
 
 /**
  * Check if MemFlow is available and reachable.
- * Returns a virtual "target" representing the MemFlow message bus.
+ * Returns an empty array to prevent the bridge UI from exposing MemFlow
+ * as a selectable "execution window" target. MemFlow is strictly used 
+ * as a background persistence bus via direct pokeTarget() calls.
  */
 export async function getTargets() {
-    try {
-        return [
-            {
-                id: 'memflow-bridge',
-                connectorId: CONNECTOR_ID,
-                title: 'MemFlow (Headless)',
-                type: 'memflow',
-                port: '8080',
-                webSocketDebuggerUrl: 'http://127.0.0.1:8080/mcp' 
-            }
-        ];
-    } catch (e) {
-        console.warn('[MEMFLOW] MemFlow CLI not found or not running:', e.message);
-        return [];
-    }
+    return [];
 }
 
 /**
