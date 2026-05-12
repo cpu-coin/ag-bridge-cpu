@@ -5,52 +5,35 @@ Chat with your AI agent from your couch, verify tasks, and "poke" it to wake up�
 
 ## Features
 - 📱 **Premium Mobile Workspace**: A glassmorphic dark-themed dashboard that feels native on your phone, complete with tabbed navigation.
-- 🎯 **Multi-Project Selection**: Actively scans local CDP ports to detect all open IDE windows running Antigravity. Select a specific project to dynamically route your commands directly to that window.
-- 🩸 **The Poke & Batching**: Remotely wakes up the Agent. Queued messages are batched for better context.
+- 🧠 **MemFlow Integration (CPUcoin Edition)**: Tightly integrated with CPUcoin's MemFlow system (currently in development) acting as a highly reliable, persistent communication bus.
+- 🎯 **IDE-Independent & Headless**: Zero reliance on third-party IDEs, accessibility permissions, or UI automation. Works purely via local SQLite.
+- 🩸 **Persistent Polling**: Automatically polls the MemFlow outbox, ensuring agent messages are never lost and delivered to your phone reliably.
 - 🔒 **Secure Remote Access**: Built-in support for Tailscale with *automatic HTTPS Let's Encrypt certificate provisioning*.
-- 🔌 **MCP Integration**: Agent can read messages and report real-time status and active tasks directly to the UI.
+- 🔌 **MCP Integration**: Includes `memflow_inbox` and `memflow_reply` MCP tools so any AI agent can connect to your mobile stream seamlessly.
 
 ## 🔌 Connector Plugin Architecture
 
 `ag_bridge` is designed to be fully modular and supports routing to multiple IDEs and agents through its `connectors/` directory.
 
 ### Supported Connectors
-* **Antigravity IDE**: Connects via Chrome DevTools Protocol (CDP) to track active workbench instances and inject remote keystrokes.
+* **MemFlow (Primary)**: Uses `better-sqlite3` to interact with CPUcoin's MemFlow infrastructure (`~/.memflow/memflow.sqlite`) for reliable, headless communication.
+* **Antigravity IDE (Fallback)**: Connects via Chrome DevTools Protocol (CDP) or AppleScript to track active workbench instances and inject remote keystrokes if MemFlow is unavailable.
 * *(Coming Soon)*: **VibeCraft**, **Maitrix**
 
-To add a new connector, create a file in `connectors/` that exports:
-```javascript
-export const CONNECTOR_ID = 'my_agent';
-export async function getTargets() { 
-    // Returns array of active targets
-    return [{ id: 'target_1', connectorId: CONNECTOR_ID, title: 'My Target' }]; 
-}
-export async function poke(target, messageContent) {
-    // Sends a message to the specific target
-    return { ok: true };
-}
-```
-Register the plugin in `connectors/index.mjs` to automatically enable scanning and routing.
+To add a new connector, create a file in `connectors/` that exports `getTargets()` and `poke()`. Register the plugin in `connectors/index.mjs` to automatically enable scanning and routing.
 
 ## Architecture
-`Phone` <-> `Bridge Server` <-> `Antigravity (Agent)`
+`Phone` <-> `Bridge Server` <-> `MemFlow (SQLite)` <-> `MCP Agent Tools` <-> `Any Agent`
 (See [Architecture](docs/architecture.md) for details).
 
 ## Requirements
 - **Node.js**: v18+
-- **Antigravity**: Launched with `--remote-debugging-port=9000` (or up to 9003) via terminal.
+- **MemFlow**: Local installation of CPUcoin MemFlow (creates `~/.memflow/memflow.sqlite`)
 - **Network**: Local Wi-Fi **OR** [Tailscale](docs/remote_with_tailscale.md) for zero-config remote access.
 
 ## Quick Start
 
-### 1. Start AG (Critical)
-You **must** start AG from a terminal to enable the Poke:
-```bash
-antigravity.exe . --remote-debugging-port=9000
-
-*(If the Agent doesn't "wake up", this is usually why.)*
-
-### 2. Install & Start Bridge
+### 1. Install & Start Bridge
 ```bash
 npm install
 npm start
