@@ -211,7 +211,8 @@ let STATE = {
     messages: [],
     agent: { state: 'idle', lastSeen: null, task: '', note: '' },
     checkpoints: [],
-    tokens: [] // Changed from optional to persisted for UX stability
+    tokens: [], // Changed from optional to persisted for UX stability
+    pairingCode: null
 };
 
 // Ephemeral State
@@ -313,7 +314,8 @@ async function saveState() {
                 messages: STATE.messages,
                 agent: STATE.agent,
                 checkpoints: STATE.checkpoints,
-                tokens: Array.from(TOKENS)
+                tokens: Array.from(TOKENS),
+                pairingCode: STATE.pairingCode
             };
             const tempFile = `${STATE_FILE}.tmp`;
             await writeFile(tempFile, JSON.stringify(data, null, 2));
@@ -361,6 +363,19 @@ async function loadState() {
         if (Array.isArray(data.tokens)) {
             STATE.tokens = data.tokens;
             TOKENS = new Set(data.tokens);
+        }
+        if (data.pairingCode) {
+            STATE.pairingCode = data.pairingCode;
+            PAIRING_CODE = data.pairingCode;
+            try {
+                const { writeFileSync } = await import('fs');
+                writeFileSync(join(DATA_DIR, 'code.txt'), PAIRING_CODE);
+            } catch (e) {
+                // ignore
+            }
+        } else {
+            STATE.pairingCode = PAIRING_CODE; // whatever was generated at startup
+            saveState();
         }
 
         // Load Approvals (Separate File)
@@ -693,9 +708,11 @@ app.get('/messages/inbox', checkAuth, (req, res) => {
     if (filterByProject) {
         items = items.filter(m => {
             if (!m.targetId) return false;
-            return m.targetId === filterByProject || 
-                   filterByProject.endsWith(m.targetId) || 
-                   m.targetId.endsWith(filterByProject);
+            const fp = String(filterByProject);
+            const mt = String(m.targetId);
+            return mt === fp || 
+                   fp.endsWith(mt) || 
+                   mt.endsWith(fp);
         });
     }
 
