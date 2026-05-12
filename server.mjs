@@ -877,6 +877,21 @@ app.get('/status', requireAuth, (req, res) => {
     });
 });
 
+// POST /admin/restart
+app.post('/admin/restart', checkAuth, (req, res) => {
+    res.json({ ok: true, message: 'Restarting server...' });
+    setTimeout(async () => {
+        try {
+            const script = `sleep 1\ncd "${process.cwd()}"\nkill $(pgrep -f "server.mjs") 2>/dev/null\nnohup node server.mjs >> server.log 2>&1 &\n`;
+            await writeFile('/tmp/ag_restart.sh', script);
+            spawn('bash', ['/tmp/ag_restart.sh'], { detached: true, stdio: 'ignore' }).unref();
+        } catch (e) {
+            console.error('Restart failed', e);
+        }
+        process.exit(0);
+    }, 1000);
+});
+
 // POST /checkpoint
 app.post('/checkpoint', checkAuth, (req, res) => {
     const cp = {
