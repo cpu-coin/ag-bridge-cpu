@@ -543,10 +543,17 @@ app.post('/approvals/:id/approve', requireAuth, async (req, res) => {
         }
     }
 
+    const msg = STATE.messages.find(m => m.approvalId === id);
+    if (msg) {
+        msg.approvalStatus = 'approved';
+        saveState();
+    }
+
     saveApprovals();
 
     console.log(`[APPROVAL] ${id} APPROVED`);
     broadcast('approval_decided', { id, status: 'approved' });
+    if (msg) broadcast('message_update', msg);
     res.json({ ok: true, approval });
 });
 
@@ -561,10 +568,18 @@ app.post('/approvals/:id/deny', requireAuth, (req, res) => {
 
     approval.status = 'denied';
     approval.decidedAt = new Date().toISOString();
+    
+    const msg = STATE.messages.find(m => m.approvalId === id);
+    if (msg) {
+        msg.approvalStatus = 'denied';
+        saveState();
+    }
+
     saveApprovals();
 
     console.log(`[APPROVAL] ${id} DENIED`);
     broadcast('approval_decided', { id, status: 'denied' });
+    if (msg) broadcast('message_update', msg);
     res.json({ ok: true, approval });
 });
 

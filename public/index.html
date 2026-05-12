@@ -669,11 +669,15 @@
           <div class="msg-meta"><span>${m.from}</span><span>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
           <div>${escapeHtml(m.text)}</div>
           ${m.approvalId ? `
-              <div style="margin-top: 8px; display: flex; gap: 6px;">
-                 <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', false)">Approve</button>
-                 <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', true)">Allow Always</button>
-                 <button class="danger" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'deny')">Deny</button>
-              </div>
+              ${(m.approvalStatus === 'approved' || m.approvalStatus === 'denied') ? `
+                 <div style="margin-top: 8px; font-size: 11px; color: var(--text-dim); font-weight: bold; text-transform: uppercase;">[ ${m.approvalStatus} ]</div>
+              ` : `
+                 <div style="margin-top: 8px; display: flex; gap: 6px;">
+                    <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', false)">Approve</button>
+                    <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', true)">Allow Always</button>
+                    <button class="danger" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'deny')">Deny</button>
+                 </div>
+              `}
           ` : ''}
         </div>
       `).join('');
