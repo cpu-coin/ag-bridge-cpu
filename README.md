@@ -45,14 +45,20 @@ You will see a **Pairing Code**, local IP address, and (if Tailscale is active) 
 3. Enter the Pairing Code.
 4. Select your active Workspace and chat away!
 
-## ⚠️ Important Note on Two-Way Chat (CDP vs. AppleScript)
-By default, AG Bridge uses an **AppleScript fallback** to type your mobile messages into the correct Antigravity Desktop window. While this guarantees your messages are delivered reliably, **AppleScript is blind**—it cannot read the AI's replies back out of the chat window. 
+## ⚠️ Important Note on Two-Way Chat
 
-If you want the agent's replies to stream back to your phone (Two-Way Chat), you **must** launch the Antigravity Desktop App from your terminal with the Chrome DevTools Protocol (CDP) port open:
-```bash
-/Applications/Antigravity.app/Contents/MacOS/Electron --remote-debugging-port=9000
-```
-*(You can use ports 9000, 9001, 9002, or 9003. The bridge scans these automatically to read the chat history DOM).*
+AG Bridge supports two distinct ways to route Agent responses back to your mobile device:
+
+1. **MemFlow MCP Tools (Recommended)**
+   If you configure your agent to use the included `ag-bridge-mcp` tools (by adding `mcp-server.mjs` to your agent's tool configuration), the agent can natively read your messages and write replies directly to the MemFlow Outbox database. **This works entirely headless and is extremely reliable.**
+
+2. **Chrome DevTools Protocol (Fallback)**
+   If you rely on the legacy `antigravity.mjs` connector, AG Bridge uses an **AppleScript fallback** to type your mobile messages into the correct Antigravity Desktop window. While this guarantees your messages are delivered reliably, **AppleScript is blind**—it cannot read the AI's replies back out of the chat window.
+   To get legacy two-way sync, you must launch the Antigravity Desktop App from your terminal with the Chrome DevTools Protocol (CDP) port open:
+   ```bash
+   /Applications/Antigravity.app/Contents/MacOS/Electron --remote-debugging-port=9000
+   ```
+   *(You can use ports 9000, 9001, 9002, or 9003. The bridge scans these automatically to read the chat history DOM).*
 
 ## Remote Access (Built-In) ☁️
 AG Bridge is designed with **first-class Tailscale integration** for secure remote access:
