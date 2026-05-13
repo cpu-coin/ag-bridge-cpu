@@ -16,3 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Hardened repository structure to align with AG standards.
+
+### Fixed
+- Fixed WebSocket broadcast event naming mismatch (`new_message` to `message_new`), ensuring the mobile app reliably receives agent responses.
+- Resolved deadlock state in `antigravity.mjs` connector; `ABORT` and `STOP` commands now properly bypass the "busy" check and forcefully click the IDE's Cancel button to reset the agent.
+- Corrected an overly broad project filter in `server.mjs` that was hiding valid workspace targets containing the word `memflow` (e.g. `memflow-cpu`) from the mobile dropdown.

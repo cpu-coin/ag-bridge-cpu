@@ -39,9 +39,17 @@ export async function getTargets() {
 }
 
 const makePokeExpression = (messageContent) => `(async () => {
+    const text = ${JSON.stringify(messageContent)};
+
     // 1. Check for blocking "Cancel" button (Agent is busy)
     const cancel = document.querySelector('[data-tooltip-id="input-send-button-cancel-tooltip"]');
-    if (cancel && cancel.offsetParent !== null) return { ok:false, reason:"busy_cancel_visible" };
+    if (cancel && cancel.offsetParent !== null) {
+        if (text.toUpperCase().includes('ABORT') || text.toUpperCase().includes('STOP')) {
+            cancel.click();
+            return { ok: true, method: "click_cancel" };
+        }
+        return { ok:false, reason:"busy_cancel_visible" };
+    }
 
     // Helper: Find editor in a specific root (document or iframe)
     function findInRoot(root) {
@@ -72,7 +80,7 @@ const makePokeExpression = (messageContent) => `(async () => {
     const editor = findEditor();
     if (!editor) return { ok:false, error:"editor_not_found" };
 
-    const text = ${JSON.stringify(messageContent)};
+    // text definition moved up
 
     editor.focus();
     document.execCommand?.("selectAll", false, null);

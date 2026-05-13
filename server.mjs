@@ -836,7 +836,7 @@ app.get('/projects', checkAuth, async (req, res) => {
         }
         
         for (const proj of recentProjects) {
-            if (proj && proj !== 'global' && !proj.toLowerCase().includes('memflow')) {
+            if (proj && proj !== 'global' && proj !== '.memflow') {
                 const exists = activeWindows.find(w => w.id === proj || w.title === proj || (w.title && w.title.includes(proj)));
                 if (!exists && projects.includes(proj)) {
                     activeWindows.push({
@@ -1103,7 +1103,7 @@ async function pollMemflowOutbox() {
                 // Avoid duplicates
                 if (!STATE.messages.find(m => m.id === msg.id)) {
                     STATE.messages.unshift(msg);
-                    broadcast('new_message', msg);
+                    broadcast('message_new', msg);
                     log('MEMFLOW', `Relayed agent response to mobile: ${msg.id}`);
                 }
                 
