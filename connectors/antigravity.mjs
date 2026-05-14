@@ -16,6 +16,18 @@ function getJson(url) {
     });
 }
 
+export function extractProjectName(title) {
+    if (!title) return '';
+    let p = title;
+    if (p.includes(' — ')) {
+        p = p.split(' — ')[0].trim();
+    } else if (p.includes(' - ')) {
+        const parts = p.split(' - ');
+        p = parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
+    }
+    return p.replace(' (Workspace)', '').trim();
+}
+
 export async function getTargets() {
     const targets = [];
     for (const port of PORTS) {
@@ -27,6 +39,7 @@ export async function getTargets() {
                         connectorId: CONNECTOR_ID,
                         id: t.id,
                         title: t.title,
+                        projectName: extractProjectName(t.title),
                         port: port,
                         url: t.url,
                         webSocketDebuggerUrl: t.webSocketDebuggerUrl

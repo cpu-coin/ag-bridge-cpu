@@ -73,19 +73,19 @@ async function runPokeScript() {
     } else if (typeof target === 'string') {
         // Handle case where target is a string from UI
         const targets = await getAllTargets();
-        const found = targets.find(t => t.title.includes(target) || t.id === target);
+        const found = targets.find(t => t.projectName === target || t.title.includes(target) || t.id === target);
         if (found) {
             target = found;
             STATE.targetProject = found; // Update state
         } else {
             // CDP is off, create a synthetic target for AppleScript fallback
-            target = { title: target, connectorId: 'antigravity' };
+            target = { title: target, projectName: target, connectorId: 'antigravity' };
             STATE.targetProject = target;
         }
     } else if (!target.webSocketDebuggerUrl && target.title) {
         // Try to re-resolve the target if it was stored without CDP info
         const targets = await getAllTargets();
-        const found = targets.find(t => t.title.includes(target.title) || t.id === target.id);
+        const found = targets.find(t => t.projectName === target.projectName || t.title.includes(target.title) || t.id === target.id);
         if (found) {
             target = found;
             STATE.targetProject = found; // Update state with resolved CDP info
@@ -97,11 +97,12 @@ async function runPokeScript() {
         return { ok: false, error: 'no_targets' };
     }
 
-    log('POKE', `Routing poke to ${target.connectorId} plugin -> ${target.title}`);
+    const finalProjectName = target.projectName || (typeof target === 'object' ? (target.title || target.id || 'global') : (target || 'global'));
+    log('POKE', `Routing poke to ${target.connectorId} plugin -> ${finalProjectName}`);
 
     // 2. Execute Plugin
     const pokeMetadata = {
-        project: typeof target === 'object' ? (target.title || target.id || 'global') : (target || 'global'),
+        project: finalProjectName,
         from: 'user',
         to: 'agent',
         channel: 'work'
