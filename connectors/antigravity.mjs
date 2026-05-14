@@ -130,6 +130,14 @@ export async function poke(target, messageContent) {
                 const appName = 'Antigravity'; 
                 const projTarget = target.title || target.id || '';
                 
+                let fallbackTarget = projTarget;
+                if (projTarget.includes(' — ')) {
+                    fallbackTarget = projTarget.split(' — ')[0].trim();
+                } else if (projTarget.includes(' - ')) {
+                    const parts = projTarget.split(' - ');
+                    fallbackTarget = parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
+                }
+
                 let script = `
                     tell application "System Events"
                         tell process "${appName}"
@@ -155,8 +163,15 @@ export async function poke(target, messageContent) {
                                     set foundWindow to true
                                     delay 0.1
                                 on error
-                                    -- fallback if exact name match fails, try switching windows using menu or just fail
-                                    set foundWindow to false
+                                    try
+                                        set targetWindow to first window whose name contains "${fallbackTarget}"
+                                        perform action "AXRaise" of targetWindow
+                                        set frontmost to true
+                                        set foundWindow to true
+                                        delay 0.1
+                                    on error
+                                        set foundWindow to false
+                                    end try
                                 end try
                                 
                                 if foundWindow then
