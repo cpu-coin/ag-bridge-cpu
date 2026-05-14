@@ -130,29 +130,47 @@ export async function poke(target, messageContent) {
                 const appName = 'Antigravity'; 
                 const projTarget = target.title || target.id || '';
                 
-                let windowFocusScript = '';
-                if (projTarget && projTarget !== 'global') {
-                    // Try to raise the specific project window if possible
-                    windowFocusScript = `
-                        try
-                            set targetWindow to first window whose name contains "${projTarget}"
-                            perform action "AXRaise" of targetWindow
-                            delay 0.1
-                        end try
-                    `;
-                }
-                
-                const script = `
+                let script = `
                     tell application "System Events"
                         tell process "${appName}"
                             set frontmost to true
-                            ${windowFocusScript}
+                            delay 0.1
                             keystroke "${safeMsg}"
                             delay 0.1
                             keystroke return
                         end tell
                     end tell
                 `;
+
+                if (projTarget && projTarget !== 'global') {
+                    // Try to raise the specific project window. If it fails, do not keystroke into the wrong one!
+                    script = `
+                        tell application "System Events"
+                            tell process "${appName}"
+                                set frontmost to true
+                                set foundWindow to false
+                                try
+                                    set targetWindow to first window whose name contains "${projTarget}"
+                                    perform action "AXRaise" of targetWindow
+                                    set foundWindow to true
+                                    delay 0.1
+                                on error
+                                    -- fallback if exact name match fails, try switching windows using menu or just fail
+                                    set foundWindow to false
+                                end try
+                                
+                                if foundWindow then
+                                    keystroke "${safeMsg}"
+                                    delay 0.1
+                                    keystroke return
+                                else
+                                    error "Target window not found"
+                                end if
+                            end tell
+                        end tell
+                    `;
+                }
+                
                 execSync(`osascript -e '${script}'`);
                 return { ok: true, method: "applescript_fallback" };
             } catch (e) {

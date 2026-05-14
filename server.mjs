@@ -169,8 +169,15 @@ async function tryPoke(isRetry = false) {
     lastPokeAt = Date.now();
 
     if (!isRetry) log('POKE', 'Attempting to wake agent...');
-    const res = await runPokeScript();
-    pokeInFlight = false;
+    let res;
+    try {
+        res = await runPokeScript();
+    } catch (e) {
+        log('POKE', 'Fatal error during poke', e.message);
+        res = { ok: false, error: 'fatal_error', details: e.message };
+    } finally {
+        pokeInFlight = false;
+    }
 
     if (res.ok) {
         log('POKE', 'Success', { method: res.method });
