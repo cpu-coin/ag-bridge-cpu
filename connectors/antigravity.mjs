@@ -147,11 +147,11 @@ export async function poke(target, messageContent) {
                     script = `
                         tell application "System Events"
                             tell process "${appName}"
-                                set frontmost to true
                                 set foundWindow to false
                                 try
                                     set targetWindow to first window whose name contains "${projTarget}"
                                     perform action "AXRaise" of targetWindow
+                                    set frontmost to true
                                     set foundWindow to true
                                     delay 0.1
                                 on error
