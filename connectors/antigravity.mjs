@@ -170,15 +170,13 @@ export async function poke(target, messageContent) {
                             tell process "${appName}"
                                 set foundWindow to false
                                 try
-                                    set targetWindow to first window whose name contains "${projTarget}"
-                                    perform action "AXRaise" of targetWindow
+                                    click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${projTarget}")
                                     set frontmost to true
                                     set foundWindow to true
                                     delay 0.1
                                 on error
                                     try
-                                        set targetWindow to first window whose name contains "${fallbackTarget}"
-                                        perform action "AXRaise" of targetWindow
+                                        click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${fallbackTarget}")
                                         set frontmost to true
                                         set foundWindow to true
                                         delay 0.1
