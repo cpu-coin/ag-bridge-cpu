@@ -4,6 +4,7 @@ import { createServer } from 'http';
 import { networkInterfaces } from 'os';
 import crypto from 'crypto';
 import { mkdir, readFile, writeFile, rename, appendFile } from 'fs/promises';
+import { existsSync } from 'fs';
 import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -472,6 +473,33 @@ function checkPolicy(cmd) {
 
 // --- Middleware ---
 app.use(express.json());
+
+// HTTPS redirect: if request arrives on raw port 8787 without going through
+// tailscale serve (which injects X-Forwarded-Proto: https), redirect to https.
+// Localhost and MCP clients are exempt.
+let _tailscaleHostname = null;
+function getTailscaleHostname() {
+    if (_tailscaleHostname) return _tailscaleHostname;
+    const ts = getTailscaleInfo();
+    _tailscaleHostname = ts ? ts.name : null;
+    return _tailscaleHostname;
+}
+app.use((req, res, next) => {
+    const ip = req.ip || req.connection.remoteAddress || '';
+    const isLocal = ip === '::1' || ip === '127.0.0.1' || ip.startsWith('::ffff:127.');
+    const isHttps = req.headers['x-forwarded-proto'] === 'https';
+    // Only redirect non-local, non-HTTPS GET/HEAD requests (not API calls with tokens)
+    if (!isLocal && !isHttps && (req.method === 'GET' || req.method === 'HEAD')) {
+        const hostname = getTailscaleHostname();
+        if (hostname) {
+            const url = `https://${hostname}${req.originalUrl}`;
+            log('HTTPS', `Redirecting ${ip} to ${url}`);
+            return res.redirect(301, url);
+        }
+    }
+    next();
+});
+
 app.use(express.static('public'));
 
 const requireAuth = (req, res, next) => {
@@ -828,6 +856,26 @@ app.get('/projects', checkAuth, async (req, res) => {
         // Use Plugin Architecture to scan for Active Windows
         const activeWindows = await getAllTargets();
         
+        // Sort active windows by EXISTING activity BEFORE stamping them.
+        // Stamping all with the same "now" makes them equal — sort first, stamp second.
+        activeWindows.sort((a, b) => {
+            const keyA = a.projectName || a.title;
+            const keyB = b.projectName || b.title;
+            const tA = projectActivity[keyA] ? new Date(projectActivity[keyA]).getTime() : 0;
+            const tB = projectActivity[keyB] ? new Date(projectActivity[keyB]).getTime() : 0;
+            return tB - tA;
+        });
+        
+        // Now stamp with "now" so the activity dict reflects open windows,
+        // but use tiny descending offsets to preserve sort order after stamping.
+        const nowMs = Date.now();
+        activeWindows.forEach((w, i) => {
+            const key = w.projectName || w.title;
+            if (key && key !== 'Launchpad') {
+                projectActivity[key] = new Date(nowMs - i).toISOString(); // -i ms offset preserves order
+            }
+        });
+        
         // Infer active windows from recent activity (last 24h) or current selection
         const recentProjects = new Set();
         const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
@@ -857,14 +905,26 @@ app.get('/projects', checkAuth, async (req, res) => {
             }
         }
         
-        // Sort active windows by recent activity too
-        activeWindows.sort((a, b) => {
-            const tA = projectActivity[a.title] || projectActivity[a.id] || 0;
-            const tB = projectActivity[b.title] || projectActivity[b.id] || 0;
-            return new Date(tB).getTime() - new Date(tA).getTime();
+        // Deduplicate activeWindows by projectName (keep the most recently active tab per project)
+        const seenProjects = new Map();
+        for (const w of activeWindows) {
+            const key = w.projectName || w.title;
+            if (!seenProjects.has(key)) {
+                seenProjects.set(key, w);
+            }
+        }
+        const dedupedWindows = Array.from(seenProjects.values());
+
+        // Sort active windows by recent activity — use projectName as the lookup key
+        dedupedWindows.sort((a, b) => {
+            const keyA = a.projectName || a.title;
+            const keyB = b.projectName || b.title;
+            const tA = projectActivity[keyA] ? new Date(projectActivity[keyA]).getTime() : 0;
+            const tB = projectActivity[keyB] ? new Date(projectActivity[keyB]).getTime() : 0;
+            return tB - tA;
         });
         
-        res.json({ ok: true, projects, activeWindows, activity: projectActivity, selectedProject: STATE.targetProject });
+        res.json({ ok: true, projects, activeWindows: dedupedWindows, activity: projectActivity, selectedProject: STATE.targetProject });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
     }
@@ -913,18 +973,15 @@ app.get('/status', requireAuth, (req, res) => {
 });
 
 // POST /admin/restart
+// Exit with code 1 so launchd's KeepAlive restarts us automatically.
+// Do NOT use process.exit(0) (clean exit) — launchd won't restart on that.
 app.post('/admin/restart', checkAuth, (req, res) => {
-    res.json({ ok: true, message: 'Restarting server...' });
-    setTimeout(async () => {
-        try {
-            const script = `sleep 1\ncd "${process.cwd()}"\nkill $(pgrep -f "server.mjs") 2>/dev/null\nnohup node server.mjs >> server.log 2>&1 &\n`;
-            await writeFile('/tmp/ag_restart.sh', script);
-            spawn('bash', ['/tmp/ag_restart.sh'], { detached: true, stdio: 'ignore' }).unref();
-        } catch (e) {
-            console.error('Restart failed', e);
-        }
-        process.exit(0);
-    }, 1000);
+    log('RESTART', 'Restart requested from mobile UI.');
+    res.json({ ok: true, message: 'Restarting via launchd...' });
+    // Give the response time to flush before exiting
+    setTimeout(() => {
+        process.exit(1); // Non-zero triggers launchd KeepAlive restart
+    }, 800);
 });
 
 // POST /checkpoint
@@ -1138,6 +1195,26 @@ async function pollMemflowOutbox() {
 // Start polling when server starts
 memflowPollTimer = setInterval(pollMemflowOutbox, MEMFLOW_POLL_INTERVAL);
 
+// --- Graceful Shutdown ---
+function gracefulShutdown(signal) {
+    console.log(`\n[SHUTDOWN] Received ${signal}. Closing server...`);
+    if (memflowPollTimer) clearInterval(memflowPollTimer);
+    server.close(() => {
+        console.log('[SHUTDOWN] HTTP server closed.');
+        process.exit(0);
+    });
+    // Force exit after 5s if graceful close hangs
+    setTimeout(() => { process.exit(1); }, 5000);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('uncaughtException', (err) => {
+    console.error(`[FATAL] Uncaught exception: ${err.message}`);
+    console.error(err.stack);
+    // Don't exit on non-fatal errors — let launchd restart if truly fatal
+    if (err.code === 'EADDRINUSE') process.exit(1);
+});
+
 // --- Start ---
 // Load state then start
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -1146,68 +1223,113 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
         let qrcode = null;
         try { qrcode = await import('qrcode-terminal'); } catch (e) { console.log('[WARN] qrcode-terminal not found'); }
 
-        server.listen(PORT, HOST, () => {
-            const ips = getLocalIPs();
-            const ts = getTailscaleInfo();
-
-            console.log('='.repeat(50));
-            console.log(` AG Bridge v${APP_VERSION} running on port ${PORT}`);
-            console.log('='.repeat(50));
-            console.log(` PAIRING CODE: [ ${PAIRING_CODE} ]`);
-            console.log('-'.repeat(50));
-
-            let qrUrl = null;
-
-            console.log(' Local (same Wi-Fi):');
-            if (ips.length > 0) {
-                ips.forEach(ip => {
-                    const url = `http://${ip}:${PORT}`;
-                    console.log(` ${url}`);
-                    if (!qrUrl) qrUrl = url; // Fallback
-                });
-            } else {
-                console.log(' (No local LAN IP found)');
-            }
-
-            if (ts) {
-                console.log('\n Remote (Tailscale Active):');
-                if (ts.name) {
-                    const url = `http://${ts.name}:${PORT}`;
-                    console.log(` ${url}`);
-                    qrUrl = url; // Priority 1: Tailscale DNS
-                    
-                    // Auto-provision HTTPS
+        function startListening(retryCount = 0) {
+            server.on('error', (err) => {
+                if (err.code === 'EADDRINUSE' && retryCount < 2) {
+                    console.log(`[STARTUP] Port ${PORT} in use. Killing stale process...`);
                     try {
-                        const tsCmd = require('fs').existsSync('/Applications/Tailscale.app/Contents/MacOS/Tailscale') 
-                            ? '/Applications/Tailscale.app/Contents/MacOS/Tailscale' 
-                            : 'tailscale';
-                        require('child_process').execSync(`${tsCmd} serve --bg ${PORT}`, { stdio: 'ignore' });
-                        console.log(` https://${ts.name}  (Secure HTTPS Active)`);
-                        qrUrl = `https://${ts.name}`; // Prefer secure for QR
-                    } catch (e) {
-                        // Tailscale HTTPS not enabled on account
+                        // Use full path — launchd PATH doesn't include /usr/sbin
+                        const lsofOut = execSync(`/usr/sbin/lsof -ti :${PORT}`, { encoding: 'utf-8' }).trim();
+                        if (lsofOut) {
+                            const pids = lsofOut.split('\n').filter(Boolean);
+                            for (const pid of pids) {
+                                console.log(`[STARTUP] Killing PID ${pid}`);
+                                execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+                            }
+                        }
+                    } catch (killErr) {
+                        console.log('[STARTUP] Could not kill stale process:', killErr.message);
                     }
+                    // Exit with code 1 so launchd KeepAlive restarts us
+                    setTimeout(() => {
+                        console.log('[STARTUP] Exiting (code 1) for launchd restart...');
+                        process.exit(1);
+                    }, 1500);
+                } else {
+                    console.error(`[STARTUP] Fatal server error: ${err.message}`);
+                    process.exit(1);
                 }
-                ts.ips.forEach(ip => {
-                    const url = `http://${ip}:${PORT}`;
-                    console.log(` ${url}`);
-                    if (!qrUrl) qrUrl = url; // Priority 2: Tailscale IP
-                });
-            } else {
-                console.log('\n Remote (Tailscale Inactive):');
-                console.log(' Install Tailscale for access anywhere: https://tailscale.com');
-            }
+            });
 
-            console.log('='.repeat(50));
+            server.listen(PORT, HOST, () => {
+                const ips = getLocalIPs();
+                const ts = getTailscaleInfo();
 
-            // Generate QR Code
-            if (qrUrl && qrcode) {
-                const fullUrl = `${qrUrl}?code=${PAIRING_CODE}`;
-                console.log('\nScan to Connect:');
-                qrcode.default.generate(fullUrl, { small: true });
-                console.log(`(Encoded: ${fullUrl})`);
                 console.log('='.repeat(50));
-            }
-        });
+                console.log(` AG Bridge v${APP_VERSION} running on port ${PORT}`);
+                console.log('='.repeat(50));
+                console.log(` PAIRING CODE: [ ${PAIRING_CODE} ]`);
+                console.log('-'.repeat(50));
+
+                let qrUrl = null;
+
+                console.log(' Local (same Wi-Fi):');
+                if (ips.length > 0) {
+                    ips.forEach(ip => {
+                        const url = `http://${ip}:${PORT}`;
+                        console.log(` ${url}`);
+                        if (!qrUrl) qrUrl = url; // Fallback
+                    });
+                } else {
+                    console.log(' (No local LAN IP found)');
+                }
+
+                if (ts) {
+                    console.log('\n Remote (Tailscale Active):');
+                    if (ts.name) {
+                        const url = `http://${ts.name}:${PORT}`;
+                        console.log(` ${url}`);
+                        qrUrl = url; // Priority 1: Tailscale DNS
+
+                        // Auto-provision HTTPS via Tailscale
+                        const tsPaths = [
+                            '/Applications/Tailscale.app/Contents/MacOS/Tailscale',
+                            '/usr/local/bin/tailscale'
+                        ];
+                        let tsCmd = 'tailscale';
+                        try {
+                            for (const p of tsPaths) {
+                                if (existsSync(p)) { tsCmd = p; break; }
+                            }
+                        } catch (e) { /* use default */ }
+                        try {
+                            // Check if serve is already configured before running
+                            const serveStatus = execSync(`${tsCmd} serve status 2>&1`, { encoding: 'utf-8' }).trim();
+                            const alreadyServing = serveStatus.includes(`:${PORT}`) || serveStatus.includes('proxy');
+                            if (!alreadyServing) {
+                                execSync(`${tsCmd} serve --bg ${PORT}`, { stdio: 'ignore' });
+                                console.log(` https://${ts.name}  (Secure HTTPS — newly provisioned)`);
+                            } else {
+                                console.log(` https://${ts.name}  (Secure HTTPS Active)`);
+                            }
+                            qrUrl = `https://${ts.name}`; // Prefer secure for QR
+                        } catch (e) {
+                            console.log(` [WARN] Tailscale HTTPS not provisioned: ${e.message || 'not enabled on account'}`);
+                        }
+                    }
+                    ts.ips.forEach(ip => {
+                        const url = `http://${ip}:${PORT}`;
+                        console.log(` ${url}`);
+                        if (!qrUrl) qrUrl = url; // Priority 2: Tailscale IP
+                    });
+                } else {
+                    console.log('\n Remote (Tailscale Inactive):');
+                    console.log(' Install Tailscale for access anywhere: https://tailscale.com');
+                }
+
+                console.log('='.repeat(50));
+
+                // Generate QR Code
+                if (qrUrl && qrcode) {
+                    const fullUrl = `${qrUrl}?code=${PAIRING_CODE}`;
+                    console.log('\nScan to Connect:');
+                    qrcode.default.generate(fullUrl, { small: true });
+                    console.log(`(Encoded: ${fullUrl})`);
+                    console.log('='.repeat(50));
+                }
+            });
+        }
+
+        startListening(0);
     });
 }

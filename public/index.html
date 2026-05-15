@@ -160,6 +160,19 @@
       width: 12px; height: 12px; border-radius: 50%; background: #444; display: inline-block; margin-right: 8px; transition: 0.3s;
     }
     .status-dot.connected { background: var(--success); box-shadow: 0 0 12px var(--success); }
+    .status-dot.reconnecting { background: var(--warning); animation: pulse-dot 1.2s ease-in-out infinite; }
+    .status-dot.offline { background: var(--danger); }
+    @keyframes pulse-dot { 0%,100% { box-shadow: 0 0 0 0 rgba(245,158,11,0.6); } 50% { box-shadow: 0 0 0 6px rgba(245,158,11,0); } }
+
+    /* Connection Banner */
+    #conn-banner {
+      display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      padding: 10px 16px; font-size: 13px; font-weight: 600; text-align: center;
+      font-family: 'JetBrains Mono', monospace; letter-spacing: 0.3px;
+    }
+    #conn-banner.reconnecting { display: block; background: rgba(245,158,11,0.9); color: #000; }
+    #conn-banner.offline { display: block; background: rgba(244,63,94,0.95); color: #fff; }
+    #conn-banner.connected { display: none; }
 
     .agent-status {
       font-size: 12px; padding: 6px 12px; border-radius: 100px; background: rgba(255,255,255,0.05); color: #aaa; margin-left: auto; border: 1px solid var(--glass-border); font-weight: 600;
@@ -210,6 +223,9 @@
   </style>
 </head>
 <body>
+
+  <!-- Connection Status Banner (shown when WS drops) -->
+  <div id="conn-banner"></div>
 
   <!-- Pairing Screen -->
   <div id="pairing-view" class="container hidden">
@@ -359,6 +375,11 @@
   <script>
     let TOKEN = localStorage.getItem('ag-token');
     let WS = null;
+    let wsRetryDelay = 1000;     // Start at 1s, doubles each failure
+    let wsRetryTimer = null;
+    let wsConnected = false;
+    let healthTimer = null;
+    let serverReachable = true;
 
     // --- Init ---
     function init() {
@@ -414,7 +435,37 @@
       fetchMessages();
       fetchAgentStatus();
       connectWS();
+      // Refresh data every 5s, separately from WS events
       setInterval(() => { fetchMessages(); fetchAgentStatus(); fetchStatus(); }, 5000);
+      // Health poll: independently verify server is up even when WS is broken
+      healthTimer = setInterval(() => pollHealth(), 10000);
+    }
+
+    // --- Connection Health ---
+    function setBanner(state, msg) {
+      const banner = document.getElementById('conn-banner');
+      const dot = document.getElementById('ws-status');
+      if (!banner || !dot) return;
+      banner.className = state;
+      banner.textContent = msg;
+      dot.className = 'status-dot ' + state;
+    }
+
+    async function pollHealth() {
+      try {
+        const r = await fetch('/health', { signal: AbortSignal.timeout(4000) });
+        if (r.ok) {
+          if (!serverReachable) {
+            serverReachable = true;
+            logEvent('Server reachable — reconnecting WS...');
+            connectWS();
+          }
+        } else { throw new Error('bad status'); }
+      } catch (e) {
+        serverReachable = false;
+        setBanner('offline', '🔴  Server unreachable — check the bridge on your Mac');
+        logEvent('Health check failed: ' + e.message);
+      }
     }
 
     function logout() {
@@ -786,25 +837,52 @@
       } catch (e) { console.error('Audio play failed', e); }
     }
 
-    // --- WebSocket ---
+    // --- WebSocket (robust reconnect with exponential backoff) ---
     function connectWS() {
       if (!TOKEN) return;
+      // Clear any pending retry timer before making a new connection
+      if (wsRetryTimer) { clearTimeout(wsRetryTimer); wsRetryTimer = null; }
+      // Close stale socket cleanly before replacing
+      if (WS && WS.readyState !== WebSocket.CLOSED) {
+        WS.onclose = null; // prevent the old onclose from scheduling another retry
+        WS.close();
+      }
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       WS = new WebSocket(`${proto}://${window.location.host}/events?token=${TOKEN}`);
-      WS.onopen = () => { document.getElementById('ws-status').classList.add('connected'); logEvent('WS Connected'); };
+
+      WS.onopen = () => {
+        wsConnected = true;
+        wsRetryDelay = 1000; // reset backoff on success
+        serverReachable = true;
+        setBanner('connected', '');
+        logEvent('✅ WS Connected');
+        fetchMessages(); fetchAgentStatus(); fetchStatus();
+      };
+
       WS.onmessage = (msg) => {
         try {
           const data = JSON.parse(msg.data);
-          if (data.event === 'approval_requested') {
-              playPing();
-              fetchApprovals();
-          }
+          if (data.event === 'approval_requested') { playPing(); fetchApprovals(); }
           if (data.event === 'approval_decided') fetchApprovals();
           if (data.event === 'message_new') fetchMessages();
           if (data.event === 'agent_status') fetchAgentStatus();
         } catch (e) {}
       };
-      WS.onclose = () => { document.getElementById('ws-status').classList.remove('connected'); setTimeout(connectWS, 3000); };
+
+      WS.onerror = () => {
+        // onerror always fires before onclose, just log it
+        logEvent('WS error — will retry...');
+      };
+
+      WS.onclose = (evt) => {
+        wsConnected = false;
+        const delay = wsRetryDelay;
+        wsRetryDelay = Math.min(wsRetryDelay * 2, 16000); // cap at 16s
+        const secs = Math.round(delay / 1000);
+        setBanner('reconnecting', `🟡  Reconnecting to bridge... (retry in ${secs}s)`);
+        logEvent(`WS closed (code ${evt.code}). Retrying in ${secs}s...`);
+        wsRetryTimer = setTimeout(() => connectWS(), delay);
+      };
     }
 
     // Attempt to resume AudioContext on first tap anywhere
