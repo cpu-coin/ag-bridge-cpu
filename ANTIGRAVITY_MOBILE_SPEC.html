@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Antigravity Mobile — Product Specification v1.0</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter',system-ui,sans-serif;background:#0a0e27;color:#e2e8f0;line-height:1.7}
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&display=swap');
+.hero{background:linear-gradient(135deg,#0a0e27 0%,#131b45 50%,#0d1535 100%);padding:80px 60px;border-bottom:1px solid rgba(139,92,246,.3)}
+.hero h1{font-family:'Outfit',sans-serif;font-size:3.2rem;font-weight:800;background:linear-gradient(135deg,#a78bfa,#38bdf8,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:12px}
+.hero .subtitle{font-size:1.25rem;color:#94a3b8;max-width:700px}
+.badge{display:inline-block;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.4);color:#a78bfa;padding:4px 14px;border-radius:20px;font-size:.8rem;font-weight:600;margin-bottom:24px}
+.meta{display:flex;gap:40px;margin-top:32px}
+.meta-item label{font-size:.75rem;text-transform:uppercase;letter-spacing:.1em;color:#64748b}
+.meta-item p{font-size:.95rem;color:#cbd5e1;font-weight:500}
+.container{max-width:1100px;margin:0 auto;padding:60px}
+h2{font-family:'Outfit',sans-serif;font-size:1.9rem;font-weight:700;color:#f1f5f9;margin:60px 0 20px;padding-bottom:12px;border-bottom:1px solid rgba(139,92,246,.2)}
+h3{font-size:1.15rem;font-weight:600;color:#a78bfa;margin:32px 0 12px}
+p{color:#94a3b8;margin-bottom:16px}
+.card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:28px;margin-bottom:20px}
+.card h3{margin-top:0}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px}
+.highlight{background:rgba(139,92,246,.08);border-left:3px solid #a78bfa;padding:16px 20px;border-radius:0 8px 8px 0;margin:20px 0;color:#cbd5e1}
+.flow{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:20px 0}
+.flow-step{background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.2);color:#38bdf8;padding:8px 16px;border-radius:8px;font-size:.85rem;font-weight:500}
+.flow-arrow{color:#475569;font-size:1.2rem}
+.status-chip{display:inline-block;padding:3px 10px;border-radius:12px;font-size:.75rem;font-weight:600}
+.done{background:rgba(34,197,94,.1);color:#4ade80;border:1px solid rgba(34,197,94,.2)}
+.inprogress{background:rgba(251,191,36,.1);color:#fbbf24;border:1px solid rgba(251,191,36,.2)}
+.planned{background:rgba(148,163,184,.1);color:#94a3b8;border:1px solid rgba(148,163,184,.2)}
+table{width:100%;border-collapse:collapse;margin:20px 0}
+th{text-align:left;padding:12px 16px;background:rgba(139,92,246,.1);color:#a78bfa;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em}
+td{padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.05);color:#94a3b8;font-size:.9rem}
+tr:hover td{background:rgba(255,255,255,.02)}
+code{background:rgba(139,92,246,.12);color:#c084fc;padding:2px 7px;border-radius:4px;font-size:.85rem;font-family:'JetBrains Mono',monospace}
+.sprint-card{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:24px;margin-bottom:16px}
+.sprint-card h4{color:#f1f5f9;font-size:1rem;font-weight:600;margin-bottom:4px}
+.sprint-card p{margin-bottom:8px;font-size:.9rem}
+ul{color:#94a3b8;padding-left:20px;margin-bottom:16px}
+li{margin-bottom:6px}
+.arch-diagram{background:rgba(255,255,255,.02);border:1px solid rgba(139,92,246,.15);border-radius:16px;padding:40px;text-align:center;margin:24px 0}
+.arch-row{display:flex;justify-content:center;align-items:center;gap:16px;margin:16px 0}
+.arch-node{background:rgba(139,92,246,.1);border:1px solid rgba(139,92,246,.3);border-radius:10px;padding:12px 20px;color:#c084fc;font-size:.85rem;font-weight:500;min-width:140px}
+.arch-node.hub{background:rgba(56,189,248,.1);border-color:rgba(56,189,248,.4);color:#38bdf8;font-size:1rem;font-weight:700;min-width:180px}
+.arch-node.mobile{background:rgba(251,191,36,.1);border-color:rgba(251,191,36,.3);color:#fbbf24}
+.arch-arrow{color:#334155;font-size:1.5rem}
+footer{border-top:1px solid rgba(255,255,255,.06);padding:40px 60px;color:#475569;font-size:.85rem;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="badge">PRODUCT SPECIFICATION · PEER REVIEW DRAFT</div>
+  <h1>Antigravity Mobile</h1>
+  <p class="subtitle">A universal mobile coding enablement layer that connects any AI-powered IDE to the developer's phone — powered by MemFlow as the durable, local-first message bus.</p>
+  <div class="meta">
+    <div class="meta-item"><label>Version</label><p>1.0 — Specification</p></div>
+    <div class="meta-item"><label>Date</label><p>May 2026</p></div>
+    <div class="meta-item"><label>Status</label><p>🟡 v1 Live · Expanding</p></div>
+    <div class="meta-item"><label>Environments</label><p>prod · stage · main</p></div>
+  </div>
+</div>
+
+<div class="container">
+
+<h2>1. Executive Summary</h2>
+<p>Antigravity Mobile began as a bridge utility for the Antigravity IDE and has evolved into a standalone product that enables developers to interact with AI coding agents from their mobile device — without being tethered to a desktop. By routing all communication through MemFlow's local SQLite store rather than fragile OS-level automation (AppleScript, Accessibility APIs), the product achieves IDE-agnostic, OS-stable operation.</p>
+<div class="highlight">The core thesis: <strong>MemFlow is the message bus.</strong> Any IDE that exposes a MemFlow MCP server connection gains full mobile coding enablement — inbox delivery, agent response relay, project context, and session continuity — for free.</div>
+
+<h2>2. Problem Statement</h2>
+<div class="grid-2">
+  <div class="card">
+    <h3>Developer Pain</h3>
+    <ul>
+      <li>AI coding agents run on desktop only</li>
+      <li>No way to send instructions from mobile</li>
+      <li>Agent responses not visible off-desk</li>
+      <li>Long-running tasks require physical presence</li>
+      <li>Context lost between mobile and desktop sessions</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Infrastructure Pain (v0)</h3>
+    <ul>
+      <li>AppleScript brittle — breaks on macOS updates</li>
+      <li>Accessibility permission prompts block automation</li>
+      <li>CDP-only injection is one-directional</li>
+      <li>No response path from agent back to mobile</li>
+      <li>HTTP-only exposure caused "Not Secure" warnings</li>
+      <li>Server restarts required manual intervention</li>
+    </ul>
+  </div>
+</div>
+
+<h2>3. Current Architecture (v1 — Production)</h2>
+
+<div class="arch-diagram">
+  <div class="arch-row">
+    <div class="arch-node mobile">📱 Mobile Browser<br><small>HTTPS / WSS</small></div>
+    <div class="arch-arrow">⟷</div>
+    <div class="arch-node hub">Antigravity Mobile<br><small>Node.js Bridge</small></div>
+    <div class="arch-arrow">⟷</div>
+    <div class="arch-node">🧠 MemFlow<br><small>Local SQLite MCP</small></div>
+  </div>
+  <div class="arch-row">
+    <div style="width:160px"></div>
+    <div class="arch-arrow" style="transform:rotate(90deg)">⟷</div>
+  </div>
+  <div class="arch-row">
+    <div style="width:280px"></div>
+    <div class="arch-node">🛠 Antigravity IDE<br><small>CDP :9000</small></div>
+  </div>
+</div>
+
+<h3>Message Flow — Mobile → Agent → Mobile</h3>
+<div class="flow">
+  <div class="flow-step">📱 User sends message</div><div class="flow-arrow">→</div>
+  <div class="flow-step">POST /messages/send</div><div class="flow-arrow">→</div>
+  <div class="flow-step">Write to MemFlow inbox</div><div class="flow-arrow">→</div>
+  <div class="flow-step">CDP poke wakes agent</div><div class="flow-arrow">→</div>
+  <div class="flow-step">Agent calls mobile_read_inbox()</div><div class="flow-arrow">→</div>
+  <div class="flow-step">Agent calls mobile_respond()</div><div class="flow-arrow">→</div>
+  <div class="flow-step">Bridge polls outbox (5s)</div><div class="flow-arrow">→</div>
+  <div class="flow-step">WebSocket broadcast</div><div class="flow-arrow">→</div>
+  <div class="flow-step">📱 Reply appears</div>
+</div>
+
+<h3>Infrastructure Stack</h3>
+<table>
+  <tr><th>Layer</th><th>Technology</th><th>Role</th><th>Status</th></tr>
+  <tr><td>Transport</td><td>Tailscale + Let's Encrypt</td><td>HTTPS/WSS with zero-config cert</td><td><span class="status-chip done">Live</span></td></tr>
+  <tr><td>Bridge Server</td><td>Node.js ESM (server.mjs)</td><td>REST API, WebSocket hub, MemFlow relay</td><td><span class="status-chip done">Live</span></td></tr>
+  <tr><td>Message Bus</td><td>MemFlow SQLite (local)</td><td>Durable inbox/outbox, scope: workspace</td><td><span class="status-chip done">Live</span></td></tr>
+  <tr><td>Agent Connector</td><td>MemFlow MCP tools</td><td>mobile_read_inbox, mobile_respond</td><td><span class="status-chip done">Live</span></td></tr>
+  <tr><td>Process Manager</td><td>macOS launchd</td><td>Auto-restart, keepalive, log rotation</td><td><span class="status-chip done">Live</span></td></tr>
+  <tr><td>Mobile UI</td><td>Vanilla JS/HTML (PWA)</td><td>Chat interface, WS reconnect, status banner</td><td><span class="status-chip done">Live</span></td></tr>
+  <tr><td>IDE Connector (v1)</td><td>CDP WebSocket</td><td>Target detection, poke delivery</td><td><span class="status-chip done">Live</span></td></tr>
+</table>
+
+<h2>4. Key Design Decisions</h2>
+
+<div class="grid-2">
+  <div class="card">
+    <h3>MemFlow as Local-Only Bus</h3>
+    <p>All <code>ag_bridge/*</code> namespaces use <code>scope: workspace</code>, writing only to the local SQLite instance. Mobile session data never contaminates shared or global MemFlow namespaces, preserving data sovereignty across projects and teams.</p>
+  </div>
+  <div class="card">
+    <h3>No AppleScript</h3>
+    <p>Previous versions depended on AppleScript + Accessibility APIs to simulate keypresses. This broke on macOS updates and required explicit system permissions. The MemFlow MCP path is OS-stable, headless-compatible, and works identically on macOS, Linux, and Windows.</p>
+  </div>
+  <div class="card">
+    <h3>Exponential Backoff Reconnect</h3>
+    <p>The mobile WebSocket client retries at 1s → 2s → 4s → 8s → 16s intervals with stale socket cleanup. A background health poll (10s) detects server-down states independently of the WS connection state machine.</p>
+  </div>
+  <div class="card">
+    <h3>launchd Auto-Heal</h3>
+    <p><code>KeepAlive: true</code> restarts the bridge on any exit. The <code>/admin/restart</code> endpoint exits with code 1 (not 0) to trigger launchd's restart, eliminating race conditions from previous bash-script spawning approach.</p>
+  </div>
+</div>
+
+<h2>5. MCP Plugin API (v1)</h2>
+<p>These two tools are registered in the MemFlow MCP server and available to any connected agent:</p>
+<table>
+  <tr><th>Tool</th><th>Parameters</th><th>Description</th></tr>
+  <tr><td><code>mobile_read_inbox</code></td><td><code>project?, limit?</code></td><td>Read pending messages from ag_bridge/inbox. Marks as read on retrieval.</td></tr>
+  <tr><td><code>mobile_respond</code></td><td><code>message, project?, inReplyTo?</code></td><td>Write response to ag_bridge/outbox. Bridge polls and relays to mobile in ≤5s.</td></tr>
+</table>
+
+<h2>6. Branch &amp; Environment Strategy</h2>
+<table>
+  <tr><th>Branch</th><th>Purpose</th><th>Deploy Target</th><th>Tag</th></tr>
+  <tr><td><code>prod</code></td><td>Stable, peer-reviewed, production-ready</td><td>launchd (live machine)</td><td><code>v1.0.0-prod</code></td></tr>
+  <tr><td><code>stage</code></td><td>Integrated features, QA in progress</td><td>launchd (dev port)</td><td>rc tags</td></tr>
+  <tr><td><code>main</code></td><td>Active development</td><td>Local only</td><td>—</td></tr>
+  <tr><td><code>feat/*</code></td><td>Feature branches</td><td>Developer machine</td><td>—</td></tr>
+</table>
+<div class="highlight"><strong>Rule:</strong> Nothing merges to <code>prod</code> without a PR reviewed by at least one peer. <code>stage</code> gates all changes before prod promotion. Current prod baseline is tagged <code>v1.0.0-prod</code>.</div>
+
+<h2>7. Product Roadmap</h2>
+
+<div class="sprint-card">
+  <h4>Sprint 1 — Foundation Hardening <span class="status-chip done">Complete</span></h4>
+  <p>Current prod baseline. All items shipped and tagged v1.0.0-prod.</p>
+  <ul>
+    <li>HTTPS persistence via Tailscale serve + dedicated launchd plist</li>
+    <li>HTTP → HTTPS redirect middleware (X-Forwarded-Proto detection)</li>
+    <li>Exponential backoff WebSocket reconnect + connection status banner</li>
+    <li>launchd KeepAlive hardening + graceful restart via exit(1)</li>
+    <li>Active projects deduplication, sort, and live CDP activity stamping</li>
+    <li>MemFlow MCP tools: mobile_read_inbox + mobile_respond</li>
+    <li>Bidirectional message loop: mobile → MemFlow inbox → agent → outbox → mobile</li>
+  </ul>
+</div>
+
+<div class="sprint-card">
+  <h4>Sprint 2 — IDE Abstraction Layer <span class="status-chip inprogress">Next Sprint</span></h4>
+  <ul>
+    <li>Define <code>IDEConnector</code> interface: <code>getTargets()</code>, <code>poke()</code>, <code>watchOutput()</code></li>
+    <li>Refactor <code>antigravity.mjs</code> to implement interface</li>
+    <li>Add <code>vscode.mjs</code> connector (VS Code on port 9229+)</li>
+    <li>Add <code>maitrix.mjs</code> connector (Maitrix-specific MCP hooks)</li>
+    <li>Connector registry with auto-discovery by port scan</li>
+    <li>Remove all remaining AppleScript paths — pure CDP + MemFlow</li>
+  </ul>
+</div>
+
+<div class="sprint-card">
+  <h4>Sprint 3 — Maitrix Plugin & Team Visibility <span class="status-chip planned">Planned</span></h4>
+  <ul>
+    <li>Package bridge as a Maitrix plugin (npm package: <code>@maitrix/mobile-bridge</code>)</li>
+    <li><strong>Team Visibility (MongoDB):</strong> Dedicated plugin area for teams to view global summaries of received requests and sent responses.</li>
+    <li><strong>"Global for all" assignment:</strong> Allow admins and managers to route/assign mobile requests across a shared team pool via the Maitrix interface.</li>
+    <li>Deep link support: tap notification → opens relevant project in Maitrix</li>
+    <li>Push notifications via Maitrix notification channel</li>
+    <li>Auth delegation: use Maitrix session token for bridge auth</li>
+  </ul>
+</div>
+
+<div class="sprint-card">
+  <h4>Sprint 4 — Multi-IDE Expansion <span class="status-chip planned">Planned</span></h4>
+  <ul>
+    <li>OpenAI Codex connector (API-based, no CDP required)</li>
+    <li>Cursor connector</li>
+    <li>JetBrains connector (via their built-in HTTP API)</li>
+    <li>Headless/CLI agent connector (for CI-triggered tasks)</li>
+    <li>Connector health dashboard in mobile UI</li>
+  </ul>
+</div>
+
+<div class="sprint-card">
+  <h4>Sprint 5 — Mobile App (Native) <span class="status-chip planned">Planned</span></h4>
+  <ul>
+    <li>Capacitor wrapper for iOS + Android</li>
+    <li>Background push via APNs/FCM when agent completes task</li>
+    <li>Voice input for mobile pokes</li>
+    <li>Code diff viewer in mobile UI</li>
+    <li>Offline queue: messages sent offline delivered when reconnected</li>
+  </ul>
+</div>
+
+<h2>8. Security Model</h2>
+<div class="grid-2">
+  <div class="card">
+    <h3>Transport Security</h3>
+    <ul>
+      <li>All traffic over HTTPS/WSS via Tailscale (Let's Encrypt cert)</li>
+      <li>Direct HTTP access auto-redirected to HTTPS</li>
+      <li>Tailscale ACLs limit access to authenticated Tailnet devices</li>
+      <li>No public internet exposure by default</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h3>Auth &amp; Isolation</h3>
+    <ul>
+      <li>Bearer token authentication on all non-localhost endpoints</li>
+      <li>Localhost (MCP server) bypasses auth for agent-to-bridge calls</li>
+      <li>MemFlow data: <code>scope: workspace</code> — local SQLite only</li>
+      <li>ag_bridge/* namespaces never sync to shared stores</li>
+    </ul>
+  </div>
+</div>
+
+<h2>9. Open Questions for Peer Review</h2>
+<table>
+  <tr><th>#</th><th>Question</th><th>Impact</th><th>Owner</th></tr>
+  <tr><td>1</td><td>Should the bridge auth token rotate on server restart or be persistent?</td><td>Security</td><td>TBD</td></tr>
+  <tr><td>2</td><td>Outbox poll interval is 5s — is this acceptable UX latency for responses?</td><td>UX</td><td>TBD</td></tr>
+  <tr><td>3</td><td>Should ag_bridge/inbox entries expire (e.g. 24h TTL) to prevent SQLite growth?</td><td>Performance</td><td>TBD</td></tr>
+  <tr><td>4</td><td>IDEConnector interface — should poke() return a promise or be fire-and-forget?</td><td>Architecture</td><td>TBD</td></tr>
+  <tr><td>5</td><td>Maitrix plugin: npm package vs. embedded in Maitrix monorepo?</td><td>Distribution</td><td>TBD</td></tr>
+  <tr><td>6</td><td>Multi-user support: single bridge per machine or one bridge per developer?</td><td>Architecture</td><td>TBD</td></tr>
+  <tr><td>7</td><td>Push notifications: self-hosted (ntfy.sh) or Maitrix notification channel?</td><td>Infrastructure</td><td>TBD</td></tr>
+</table>
+
+<h2>10. Repository Structure (Target)</h2>
+<div class="card">
+<pre style="color:#94a3b8;font-size:.85rem;line-height:1.8">
+antigravity-mobile/
+├── server.mjs              # Core bridge server (HTTP + WebSocket)
+├── connectors/
+│   ├── index.mjs           # Connector registry + IDEConnector interface
+│   ├── antigravity.mjs     # Antigravity IDE (CDP-based)
+│   ├── maitrix.mjs         # Maitrix connector (Sprint 2)
+│   ├── vscode.mjs          # VS Code connector (Sprint 2)
+│   ├── codex.mjs           # OpenAI Codex (Sprint 4)
+│   └── memflow.mjs         # MemFlow message bus (shared)
+├── public/
+│   ├── index.html          # Mobile PWA UI
+│   └── assets/
+├── plugins/
+│   └── maitrix/            # Maitrix plugin package (Sprint 3)
+├── .launchd/               # launchd plist templates
+├── docs/
+│   └── ANTIGRAVITY_MOBILE_SPEC.html   # This document
+└── package.json
+</pre>
+</div>
+
+</div>
+
+<footer>
+  <div>Antigravity Mobile · Product Specification v1.0 · Peer Review Draft · May 2026</div>
+  <div>Confidential — Internal Use Only</div>
+</footer>
+
+</body>
+</html>

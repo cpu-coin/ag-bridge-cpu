@@ -239,7 +239,7 @@ const TOOLS = {
     // These tools let agents read/write through MemFlow directly,
     // bypassing the HTTP API entirely. No IDE poke needed.
 
-    memflow_inbox: {
+    mobile_read_inbox: {
         schema: z.object({
             project: z.string().optional()
         }),
@@ -262,7 +262,7 @@ const TOOLS = {
         }
     },
 
-    memflow_reply: {
+    mobile_respond: {
         schema: z.object({
             text: z.string(),
             channel: z.enum(["work", "status", "qa"]).optional(),
@@ -422,7 +422,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
             },
             {
-                name: "memflow_inbox",
+                name: "mobile_read_inbox",
                 description: "Read pending mobile messages from MemFlow inbox (no IDE/CDP needed)",
                 inputSchema: {
                     type: "object",
@@ -443,7 +443,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
                 }
             },
             {
-                name: "memflow_reply",
+                name: "mobile_respond",
                 description: "Write agent response to MemFlow outbox (delivered to mobile via ag_bridge polling)",
                 inputSchema: {
                     type: "object",

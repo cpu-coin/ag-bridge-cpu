@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox } from './connectors/index.mjs';
+import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse } from './connectors/index.mjs';
 
 const APP_VERSION = '1.0.1';
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,8 @@ async function runPokeScript() {
     let msgText = "check inbox";
     if (pendingMsgs.length > 0) {
         msgText = pendingMsgs.map(m => m.text).join('\n\n');
+        // Always append a secret instruction so the agent knows HOW to reply to the mobile UI
+        msgText += '\n\n<system_note>Important: Send your response to the user using the `mobile_respond` MCP tool. If you do not have that tool, fallback to making a POST request to http://127.0.0.1:8787/messages/send with JSON body {"to": "user", "from": "agent", "text": "your response"} using curl or a script. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>';
         log('POKE', `Injecting ${pendingMsgs.length} messages. Total length: ${msgText.length}`);
     }
 
@@ -690,6 +692,16 @@ app.post('/debug/create-approval', requireAuth, (req, res) => {
     saveState();
 
     console.log(`[DEBUG] Created test approval ${newApproval.id}`);
+    
+    // Write approval request to MemFlow outbox
+    memflowWriteResponse(msgText, {
+        id: newApproval.id,
+        project: targetId,
+        channel: 'approval',
+        from: 'agent',
+        actorId: `agent_${targetId}`
+    }).catch(err => console.error('[MEMFLOW] Failed to write debug approval to MemFlow:', err));
+
     broadcast('approval_requested', newApproval);
     broadcast('message_new', msg);
     res.json(newApproval);
@@ -700,7 +712,7 @@ app.post('/debug/create-approval', requireAuth, (req, res) => {
 // POST /messages/send
 app.post('/messages/send', checkAuth, (req, res) => {
     console.log('[DEBUG] HEX DUMP /messages/send body:', JSON.stringify(req.body));
-    const { to, channel, text, project } = req.body;
+    const { to, channel, text, project, senderAlias } = req.body;
     let { from } = req.body;
     from = from || 'user'; // Default to user if missing
 
@@ -718,11 +730,15 @@ app.post('/messages/send', checkAuth, (req, res) => {
     if (STATE.targetProject) {
         if (typeof STATE.targetProject === 'string') {
             defaultTargetId = STATE.targetProject;
+        } else if (STATE.targetProject.projectName) {
+            defaultTargetId = STATE.targetProject.projectName;
         } else if (STATE.targetProject.title) {
             defaultTargetId = STATE.targetProject.title.replace(' - Visual Studio Code', '');
         }
     }
     const targetId = project || defaultTargetId;
+
+    const prefix = senderAlias ? `[${senderAlias}] ` : '[Mobile] ';
 
     const msg = {
         id: 'msg_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5),
@@ -730,7 +746,7 @@ app.post('/messages/send', checkAuth, (req, res) => {
         from,
         to, // 'agent' or 'user'
         channel: channel || 'general',
-        text: (from === 'user' ? '[Mobile] ' : '') + text,
+        text: (from === 'user' ? prefix : '') + text,
         status: 'new',
         targetId
     };
@@ -745,6 +761,15 @@ app.post('/messages/send', checkAuth, (req, res) => {
     // Trigger Poke if msg is for agent
     if (to === 'agent') {
         schedulePoke();
+    } else if (to === 'user' && from === 'agent') {
+        // If agent uses the HTTP API instead of MCP tool, we still need to write it to MemFlow!
+        memflowWriteResponse(text, {
+            id: msg.id.replace(/^msg_(mf_)?/, ''),
+            project: targetId,
+            channel: channel || 'work',
+            from: 'agent',
+            actorId: `agent_${targetId}`
+        }).catch(err => console.error('[MEMFLOW] Failed to write API response to MemFlow:', err));
     }
 
     res.json({ ok: true, message: msg });
@@ -1049,6 +1074,16 @@ app.post('/approvals/request', checkAuth, (req, res) => {
     saveState();
 
     console.log(`[REQUEST] Approval requested: ${newApproval.id} (${kind})`);
+    
+    // Write approval request to MemFlow outbox for reliable mobile delivery
+    memflowWriteResponse(msgText, {
+        id: newApproval.id,
+        project: targetId,
+        channel: 'approval',
+        from: 'agent',
+        actorId: `agent_${targetId}`
+    }).catch(err => console.error('[MEMFLOW] Failed to write approval to MemFlow:', err));
+
     broadcast('approval_requested', newApproval);
     broadcast('message_new', msg);
     res.json({ ok: true, approval: newApproval });
@@ -1139,10 +1174,8 @@ const MEMFLOW_POLL_INTERVAL = 5000; // 5 seconds
 
 async function pollMemflowOutbox() {
     try {
-        // Determine which project to poll for
-        const project = STATE.targetProject 
-            ? (typeof STATE.targetProject === 'string' ? STATE.targetProject : STATE.targetProject.title || STATE.targetProject.id)
-            : null;
+        // Poll globally across all projects so we catch responses from background windows
+        const project = null;
         
         const responses = await memflowPollResponses(project);
         
@@ -1151,10 +1184,14 @@ async function pollMemflowOutbox() {
             
             const memflowIdsToMark = [];
             
-            for (const resp of responses) {
+            // responses from memflow are newest-first (ORDER BY created_at DESC)
+            // we must reverse them to process oldest-first to maintain chronological order when pushing
+            for (const resp of responses.reverse()) {
+                const baseId = resp.id.replace(/^(msg_)?(mf_)?/, '').replace(/^appr_/, '');
+
                 // Convert to ag_bridge message format and store in STATE
                 const msg = {
-                    id: `msg_mf_${resp.id}`,
+                    id: `msg_mf_${baseId}`,
                     createdAt: resp.createdAt,
                     from: resp.from || 'agent',
                     to: 'user',
@@ -1165,9 +1202,18 @@ async function pollMemflowOutbox() {
                     source: 'memflow'
                 };
                 
-                // Avoid duplicates
-                if (!STATE.messages.find(m => m.id === msg.id)) {
-                    STATE.messages.unshift(msg);
+                // Avoid duplicates by checking exact ID or variations of the same base ID
+                const isDuplicate = STATE.messages.find(m => {
+                    if (m.id === msg.id) return true;
+                    if (m.id === `msg_${baseId}`) return true;
+                    if (m.id === `msg_appr_${baseId}`) return true;
+                    if (m.id === `msg_mf_${baseId}`) return true;
+                    if (m.approvalId === `appr_${baseId}`) return true;
+                    return false;
+                });
+
+                if (!isDuplicate) {
+                    STATE.messages.push(msg);
                     broadcast('message_new', msg);
                     log('MEMFLOW', `Relayed agent response to mobile: ${msg.id}`);
                 }
@@ -1175,6 +1221,11 @@ async function pollMemflowOutbox() {
                 if (resp.memflowId) {
                     memflowIdsToMark.push(resp.memflowId);
                 }
+            }
+            
+            // Keep array size manageable
+            if (STATE.messages.length > 200) {
+                STATE.messages = STATE.messages.slice(-200);
             }
             
             // Mark as read in MemFlow so they don't get polled again

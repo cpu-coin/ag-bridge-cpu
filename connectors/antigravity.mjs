@@ -54,6 +54,10 @@ export async function getTargets() {
 const makePokeExpression = (messageContent) => `(async () => {
     const text = ${JSON.stringify(messageContent)};
 
+    // Attempt to open chat panel via Cmd+L
+    document.dispatchEvent(new KeyboardEvent('keydown', { metaKey: true, key: 'l', code: 'KeyL', keyCode: 76, bubbles: true }));
+    await new Promise(r => setTimeout(r, 800)); // Increased to 800ms to allow lazy-loading of the chat panel DOM
+
     // 1. Check for blocking "Cancel" button (Agent is busy)
     const cancel = document.querySelector('[data-tooltip-id="input-send-button-cancel-tooltip"]');
     if (cancel && cancel.offsetParent !== null) {
@@ -69,31 +73,56 @@ const makePokeExpression = (messageContent) => `(async () => {
         if (!root || !root.querySelectorAll) return null;
         const selector = '#cascade [data-lexical-editor="true"][contenteditable="true"][role="textbox"], ' +
                          'div[contenteditable="true"][role="textbox"], ' +
-                         '.monaco-editor textarea';
+                         '.monaco-editor textarea, ' +
+                         'textarea[aria-label*="Ask"], textarea[aria-label*="Chat"], ' +
+                         'div.interactive-input-part textarea, ' +
+                         'textarea[placeholder*="Ask"], textarea[placeholder*="Message"]';
         const candidates = [...root.querySelectorAll(selector)];
-        return candidates.filter(el => el.offsetParent !== null).at(-1);
+        const visible = candidates.filter(el => el.offsetParent !== null || el.getBoundingClientRect().width > 0);
+        return visible.length > 0 ? visible.at(-1) : candidates.at(-1);
     }
 
-    function findEditor() {
-        let found = findInRoot(document);
-        if (found) return found;
-        const iframes = document.querySelectorAll('iframe, webview');
-        for (const frame of iframes) {
-            try {
-                const doc = frame.contentDocument;
-                if (doc) {
-                    found = findInRoot(doc);
-                    if (found) return found;
-                }
-            } catch (e) { }
+    async function findEditorAsync() {
+        for (let i = 0; i < 5; i++) {
+            let found = findInRoot(document);
+            if (found) return found;
+            const iframes = document.querySelectorAll('iframe, webview');
+            for (const frame of iframes) {
+                try {
+                    const doc = frame.contentDocument;
+                    if (doc) {
+                        found = findInRoot(doc);
+                        if (found) return found;
+                    }
+                } catch (e) { }
+            }
+            if (i < 4) await new Promise(r => setTimeout(r, 300));
         }
         return null;
     }
 
-    const editor = findEditor();
+    const editor = await findEditorAsync();
     if (!editor) return { ok:false, error:"editor_not_found" };
 
     // text definition moved up
+
+    const lowerText = text.toLowerCase().trim();
+    const root = editor.getRootNode();
+    const buttons = Array.from((root.querySelectorAll || document.querySelectorAll).call(root, 'button'));
+    
+    // Check for Approval buttons (Accept/Reject)
+    const approveBtn = buttons.find(b => b.textContent && (b.textContent.toLowerCase().includes('approve') || b.textContent.toLowerCase().includes('accept')));
+    const rejectBtn = buttons.find(b => b.textContent && (b.textContent.toLowerCase().includes('reject') || b.textContent.toLowerCase().includes('deny')));
+
+    if (approveBtn && (lowerText === 'yes' || lowerText === 'y' || lowerText === 'approve' || lowerText === 'accept' || lowerText.includes('accept all'))) {
+        approveBtn.click();
+        return { ok: true, method: "click_approve" };
+    }
+    
+    if (rejectBtn && (lowerText === 'no' || lowerText === 'n' || lowerText === 'reject' || lowerText === 'deny')) {
+        rejectBtn.click();
+        return { ok: true, method: "click_reject" };
+    }
 
     editor.focus();
     document.execCommand?.("selectAll", false, null);
@@ -102,23 +131,42 @@ const makePokeExpression = (messageContent) => `(async () => {
     let inserted = false;
     try { inserted = !!document.execCommand?.("insertText", false, text); } catch {}
     if (!inserted) {
-        if (editor.tagName === 'TEXTAREA') {
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value").set;
-            nativeInputValueSetter?.call(editor, text);
+        if (editor.tagName === 'TEXTAREA' || editor.tagName === 'INPUT') {
+            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set || 
+                                           Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+            if (nativeInputValueSetter) {
+                nativeInputValueSetter.call(editor, text);
+            } else {
+                editor.value = text;
+            }
             editor.dispatchEvent(new Event('input', { bubbles: true }));
         } else {
-            editor.textContent = text;
-            editor.dispatchEvent(new InputEvent("beforeinput", { bubbles:true, inputType:"insertText", data:text }));
-            editor.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"insertText", data:text }));
+            // For Lexical and contenteditables, textContent breaks the internal state.
+            // Dispatching a paste event is universally supported by rich text editors.
+            const dataTransfer = new DataTransfer();
+            dataTransfer.setData('text/plain', text);
+            const pasteEvent = new ClipboardEvent('paste', {
+                clipboardData: dataTransfer,
+                bubbles: true,
+                cancelable: true
+            });
+            editor.dispatchEvent(pasteEvent);
+            
+            // If it still didn't update (extremely rare), fallback to textContent
+            if (!editor.textContent.includes(text.substring(0, 5))) {
+                editor.textContent = text;
+                editor.dispatchEvent(new InputEvent("input", { bubbles:true, inputType:"insertText", data:text }));
+            }
         }
     }
 
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // Wait for React/Lexical state to flush the new text
+    await new Promise(r => setTimeout(r, 150));
 
-    const root = editor.getRootNode(); 
     const submit = (root.querySelector || document.querySelector).call(root, "svg.lucide-arrow-right")?.closest("button") || 
                    (root.querySelector || document.querySelector).call(root, '[aria-label="Send Message"]') ||
-                   (root.querySelector || document.querySelector).call(root, '.codicon-send');
+                   (root.querySelector || document.querySelector).call(root, '.codicon-send') ||
+                   buttons.find(b => b.textContent?.toLowerCase() === 'send');
 
     if (submit && !submit.disabled) {
         submit.click();
@@ -242,36 +290,61 @@ export async function poke(target, messageContent) {
         ws.send(JSON.stringify({ id, method, params }));
     });
 
-    const contexts = [];
-    ws.addEventListener('message', (msg) => {
-        try {
-            const data = JSON.parse(msg.data);
-            if (data.method === 'Runtime.executionContextCreated') {
-                contexts.push(data.params.context);
-            }
-        } catch { }
-    });
-
     try {
         await call("Runtime.enable", {});
-        await new Promise(r => setTimeout(r, 800));
+        await call("Page.enable", {}).catch(() => {}); // may not be available on all targets
+
+        // Send Cmd+L (Meta+L) to open the chat panel
+        try {
+            await call("Input.dispatchKeyEvent", { type: "rawKeyDown", modifiers: 8, windowsVirtualKeyCode: 76, key: "l" });
+            await call("Input.dispatchKeyEvent", { type: "keyUp", modifiers: 8, windowsVirtualKeyCode: 76, key: "l" });
+            await new Promise(r => setTimeout(r, 200)); // wait for UI
+        } catch (e) { /* ignore if Input domain unsupported */ }
 
         const expression = makePokeExpression(messageContent);
-        for (const ctx of contexts) {
-            try {
-                const evalPoke = await call("Runtime.evaluate", {
-                    expression: expression,
-                    returnByValue: true,
-                    awaitPromise: true,
-                    contextId: ctx.id
-                });
-                if (evalPoke.result && evalPoke.result.value) {
-                    const res = evalPoke.result.value;
-                    if (res.ok) return res;
-                    if (res.reason === "busy_cancel_visible") return { ok: false, reason: "busy" };
-                }
-            } catch (ignore) { }
-        }
+
+        // Strategy 1: Evaluate in the default (main) execution context directly.
+        // This works when the page is already loaded — no need to wait for context events.
+        try {
+            const evalResult = await call("Runtime.evaluate", {
+                expression,
+                returnByValue: true,
+                awaitPromise: true,
+            });
+            const val = evalResult?.result?.value;
+            if (val?.ok) return val;
+            if (val?.reason === "busy_cancel_visible") return { ok: false, reason: "busy" };
+            // If editor not found in main context, fall through to frame search
+        } catch (e) { /* try frames next */ }
+
+        // Strategy 2: Enumerate all frames and evaluate in each execution context.
+        // Covers Electron webviews and sandboxed iframes.
+        try {
+            const { frameTree } = await call("Page.getFrameTree", {});
+            const frameIds = [];
+            const collectFrames = (node) => {
+                if (node?.frame?.id) frameIds.push(node.frame.id);
+                for (const child of node?.childFrames || []) collectFrames(child);
+            };
+            collectFrames(frameTree);
+
+            // Get all execution contexts for those frames
+            const { contexts: allContexts } = await call("Runtime.getHeapUsage", {}).catch(() => ({ contexts: [] }));
+
+            // Fallback: use frameId-based context execution
+            for (const frameId of frameIds) {
+                try {
+                    const evalResult = await call("Runtime.evaluate", {
+                        expression,
+                        returnByValue: true,
+                        awaitPromise: true,
+                    });
+                    const val = evalResult?.result?.value;
+                    if (val?.ok) return val;
+                } catch (e) { }
+            }
+        } catch (e) { /* Page.getFrameTree not supported */ }
+
         return { ok: false, error: "editor_not_found_in_any_context" };
     } catch (err) {
         return { ok: false, error: "runtime_error", details: err.message };

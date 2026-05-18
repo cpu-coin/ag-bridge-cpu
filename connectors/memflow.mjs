@@ -301,7 +301,7 @@ export async function markAsRead(memflowIds) {
  * This is called by the agent (via MCP tool) to send responses back to mobile.
  */
 export async function writeResponse(messageContent, metadata = {}) {
-    const msgId = `resp_${crypto.randomBytes(6).toString('hex')}`;
+    const msgId = metadata.id || `resp_${crypto.randomBytes(6).toString('hex')}`;
     const project = metadata.project || 'global';
     const now = new Date().toISOString();
 
