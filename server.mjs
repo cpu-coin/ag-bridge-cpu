@@ -52,15 +52,6 @@ async function runPokeScript() {
         log('POKE', 'No new messages. Sending default wake-up poke.');
     }
 
-    // Combine messages if multiple
-    let msgText = "check inbox";
-    if (pendingMsgs.length > 0) {
-        msgText = pendingMsgs.map(m => m.text).join('\n\n');
-        // Always append a secret instruction so the agent knows HOW to reply to the mobile UI
-        msgText += '\n\n<system_note>Important: Send your response to the user using the `mobile_respond` MCP tool. If you do not have that tool, fallback to making a POST request to http://127.0.0.1:8787/messages/send with JSON body {"to": "user", "from": "agent", "text": "your response"} using curl or a script. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>';
-        log('POKE', `Injecting ${pendingMsgs.length} messages. Total length: ${msgText.length}`);
-    }
-
     // 1. Resolve Target
     let target = STATE.targetProject;
     
@@ -95,13 +86,22 @@ async function runPokeScript() {
         }
     }
 
+    const finalProjectName = target.projectName || (typeof target === 'object' ? (target.title || target.id || 'global') : (target || 'global'));
+
+    // Combine messages if multiple
+    let msgText = "check inbox";
+    if (pendingMsgs.length > 0) {
+        msgText = pendingMsgs.map(m => m.text).join('\n\n');
+        // Always append a secret instruction so the agent knows HOW to reply to the mobile UI
+        msgText += \`\n\n<system_note>Important: The user sent this message from the [\${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>\`;
+        log('POKE', \`Injecting \${pendingMsgs.length} messages. Total length: \${msgText.length}\`);
+    }
     if (!target) {
         log('POKE', 'Failed: No targets found across any connectors.');
         return { ok: false, error: 'no_targets' };
     }
 
-    const finalProjectName = target.projectName || (typeof target === 'object' ? (target.title || target.id || 'global') : (target || 'global'));
-    log('POKE', `Routing poke to ${target.connectorId} plugin -> ${finalProjectName}`);
+    log('POKE', \`Routing poke to \${target.connectorId} plugin -> \${finalProjectName}\`);
 
     // 2. Execute Plugin
     const pokeMetadata = {
