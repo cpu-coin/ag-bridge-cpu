@@ -232,6 +232,19 @@
     .quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 4px; }
     .quick-btn { width: auto; font-size: 13px; padding: 8px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 100px; box-shadow: none; flex: 1 1 calc(33.333% - 8px); min-width: 80px; text-align: center; }
 
+    .chat-layout-wrapper { display: flex; gap: 16px; align-items: stretch; }
+    .chat-main-area { flex: 1; display: flex; flex-direction: column; }
+    .quick-actions-sidebar { width: 140px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; justify-content: flex-start; border-left: 1px solid var(--glass-border); padding-left: 16px; }
+    .quick-actions-sidebar .sidebar-btn { width: 100%; margin: 0; padding: 8px 12px; font-size: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); color: var(--text); text-align: center; box-shadow: none; transition: all 0.2s; font-family: inherit; font-weight: 600; cursor: pointer; }
+    .quick-actions-sidebar .sidebar-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--primary); box-shadow: 0 0 8px var(--primary-glow); }
+    .quick-actions-sidebar .sidebar-btn:active { transform: translateY(1px); }
+    
+    @media (max-width: 480px) {
+      .chat-layout-wrapper { flex-direction: column; }
+      .quick-actions-sidebar { width: 100% !important; border-left: none !important; padding-left: 0 !important; flex-direction: row !important; flex-wrap: wrap; margin-top: 12px; }
+      .quick-actions-sidebar .sidebar-btn { flex: 1 1 calc(50% - 8px) !important; }
+    }
+
     /* Projects Grid */
     .projects-grid {
       display: grid; grid-template-columns: 1fr; gap: 12px;
@@ -365,24 +378,29 @@
         <div id="agent-active-task" style="font-size: 13px; color: var(--primary); margin-bottom: 12px; display: none; background: rgba(56, 189, 248, 0.1); padding: 10px; border-radius: 8px; border: 1px solid rgba(56, 189, 248, 0.2);">
           <strong style="color: white;">Current Task:</strong> <span id="agent-task-text"></span>
         </div>
-        <div id="chat-thread" class="chat-container">
-          <div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No messages yet.</div>
-        </div>
-        <div class="flex gap-2">
-          <input type="text" id="chat-input" placeholder="Message Antigravity..." onkeypress="handleEnter(event)">
-          <button onclick="sendChat()" style="width: auto; padding: 0 20px;">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-          </button>
-        </div>
-        <div class="quick-actions">
-          <button class="quick-btn" onclick="sendQuick('Approve')">👍 Approve</button>
-          <button class="quick-btn" onclick="sendQuick('Reject')">👎 Reject</button>
-          <button class="quick-btn" onclick="sendQuick('CONTINUE')">Continue</button>
-          <button class="quick-btn" onclick="sendQuick('ABORT')">Abort</button>
-          <button class="quick-btn" onclick="sendRetry()">Retry Last</button>
-          <button class="quick-btn" onclick="sendQuick('STOP')">Stop Execution</button>
-          <button class="quick-btn" onclick="sendQuick('STATUS')">Report Status</button>
-          <button class="quick-btn" onclick="sendQuick('Please summarize the last action/result')">Show Last Result</button>
+        <div class="chat-layout-wrapper">
+          <div class="chat-main-area">
+            <div id="chat-thread" class="chat-container">
+              <div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No messages yet.</div>
+            </div>
+            <div class="flex gap-2">
+              <input type="text" id="chat-input" placeholder="Message Antigravity..." onkeypress="handleEnter(event)">
+              <button onclick="sendChat()" style="width: auto; padding: 0 20px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+              </button>
+            </div>
+          </div>
+          <div class="quick-actions-sidebar">
+            <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center; margin-bottom: 4px;">Quick Actions</div>
+            <button class="sidebar-btn" onclick="sendQuick('Approve')">👍 Approve</button>
+            <button class="sidebar-btn" onclick="sendQuick('Reject')">👎 Reject</button>
+            <button class="sidebar-btn" onclick="sendQuick('CONTINUE')">Continue</button>
+            <button class="sidebar-btn" onclick="sendQuick('ABORT')">Abort</button>
+            <button class="sidebar-btn" onclick="sendRetry()">Retry Last</button>
+            <button class="sidebar-btn" onclick="sendQuick('STOP')">Stop</button>
+            <button class="sidebar-btn" onclick="sendQuick('STATUS')">Status</button>
+            <button class="sidebar-btn" onclick="sendQuick('Please summarize the last action/result')">Show Summary</button>
+          </div>
         </div>
       </div>
     </div>
