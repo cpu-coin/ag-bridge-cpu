@@ -509,6 +509,17 @@
       }
     }
 
+    function copyFromData(btn) {
+      var b64 = btn.getAttribute('data-copy');
+      if (!b64) return;
+      try {
+        var text = decodeURIComponent(escape(atob(b64)));
+        copyToClipboard(btn, text);
+      } catch (err) {
+        console.error('Failed to decode copy data', err);
+      }
+    }
+
     const TAB_LABELS = { 'tab-monitor': 'Monitor', 'tab-chat': 'Chat', 'tab-projects': 'Projects', 'tab-queue': 'Approvals', 'tab-settings': 'Settings' };
     const TAB_NAV_IDS = { 'tab-monitor': 'nav-monitor', 'tab-chat': 'nav-chat', 'tab-projects': 'nav-projects', 'tab-queue': 'nav-queue', 'tab-settings': 'nav-settings' };
 
@@ -683,16 +694,17 @@
     
     // --- Fetches ---
     async function fetchMessages() {
-      // 1. Context Sensitive (Chat Tab)
+      // 1. Context Sensitive (Chat Tab) — ALWAYS filter by the selected project
+      //    When "global" is selected, only show messages with targetId === 'global'
+      //    When a project is selected, only show that project's messages
+      //    This prevents the confusing "roll-up" of all projects into one view
       const currentProj = document.getElementById('chat-project-selector').value;
-      let chatUrl = '/messages/inbox?limit=50';
-      if (currentProj && currentProj !== 'global' && currentProj !== 'Global Scope') {
-          chatUrl += `&filterByProject=${encodeURIComponent(currentProj)}`;
-      }
+      const filterKey = (!currentProj || currentProj === 'Global Scope') ? 'global' : currentProj;
+      let chatUrl = `/messages/inbox?limit=50&filterByProject=${encodeURIComponent(filterKey)}`;
       const chatData = await api(chatUrl);
       if (chatData && chatData.messages) renderMessages(chatData.messages);
 
-      // 2. Global (Monitor Tab)
+      // 2. Global (Monitor Tab) — shows ALL messages across all projects with labels
       const globalData = await api('/messages/inbox?limit=100');
       if (globalData && globalData.messages) renderMonitor(globalData.messages);
     }
@@ -708,6 +720,7 @@
         var pColor = getProjectColor(m.targetId);
         var label = m.from === 'user' ? 'User &rarr; ' + escapeHtml(m.targetId || 'global') : 'Agent (' + escapeHtml(m.targetId || 'global') + ') &rarr; User';
         var time = new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        var b64Text = btoa(unescape(encodeURIComponent(m.text)));
         return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="margin-right: auto; margin-left: 0; max-width: 100%; border-bottom-left-radius: 4px; border-bottom-right-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);">' +
           '<div class="msg-meta">' +
             '<span style="color: ' + pColor + '; font-weight: bold; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(m.targetId) + '\')">' + label + '</span>' +
@@ -715,7 +728,7 @@
           '</div>' +
           '<div style="position: relative;">' +
             '<div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">' + escapeHtml(m.text) + '</div>' +
-            '<button onclick="copyToClipboard(this, ' + JSON.stringify(m.text) + ')" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
+            '<button data-copy="' + b64Text + '" onclick="copyFromData(this)" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
             '</button>' +
           '</div>' +
@@ -1008,12 +1021,13 @@
         }
         var senderLabel = m.from === 'user' ? 'User' : 'Agent';
         var labelStyle = 'color: ' + pColor + '; font-weight: 700;';
+        var b64Text = btoa(unescape(encodeURIComponent(m.text)));
 
         return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="' + msgStyle + '">' +
           '<div class="msg-meta"><span style="' + labelStyle + '">' + senderLabel + '</span><span>' + time + '</span></div>' +
           '<div style="position: relative;">' +
             '<div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">' + safeText + '</div>' +
-            '<button onclick="copyToClipboard(this, ' + JSON.stringify(m.text) + ')" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
+            '<button data-copy="' + b64Text + '" onclick="copyFromData(this)" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
             '</button>' +
           '</div>' +
@@ -1041,10 +1055,8 @@
       if (!text) return;
       
       const currentProj = document.getElementById('chat-project-selector').value;
-      let projectStr = undefined;
-      if (currentProj && currentProj !== 'global' && currentProj !== 'Global Scope') {
-          projectStr = currentProj;
-      }
+      // Always send an explicit project tag — 'global' when Global is selected
+      const projectStr = (!currentProj || currentProj === 'Global Scope') ? 'global' : currentProj;
       
       const senderAlias = localStorage.getItem('senderAlias') || 'Mobile';
       

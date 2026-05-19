@@ -803,11 +803,10 @@ app.get('/messages/inbox', checkAuth, (req, res) => {
     if (filterByProject) {
         items = items.filter(m => {
             if (!m.targetId) return false;
-            const fp = String(filterByProject);
-            const mt = String(m.targetId);
-            return mt === fp || 
-                   fp.endsWith(mt) || 
-                   mt.endsWith(fp);
+            const fp = String(filterByProject).trim();
+            const mt = String(m.targetId).trim();
+            // Strict exact match only — no fuzzy endsWith to prevent cross-project leakage
+            return mt === fp;
         });
     }
 
