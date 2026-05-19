@@ -673,24 +673,22 @@
         thread.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No communications yet.</div>';
         return;
       }
-      thread.innerHTML = msgs.slice().reverse().map(m => {
-        const pColor = getProjectColor(m.targetId);
-        return `
-        <div class="msg ${m.from === 'agent' ? 'agent' : 'user'}" style="margin-right: auto; margin-left: 0; max-width: 100%; border-bottom-left-radius: 4px; border-bottom-right-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);">
-          <div class="msg-meta">
-             <span style="color: ${pColor}; font-weight: bold; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat('${escapeHtml(m.targetId)}')">
-                ${m.from === 'user' ? 'User &rarr; ' + escapeHtml(m.targetId || 'global') : 'Agent (' + escapeHtml(m.targetId || 'global') + ') &rarr; User'}
-             </span>
-             <span>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
-          </div>
-          <div style="position: relative;">
-            <div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(m.text)}</div>
-            <button onclick="copyToClipboard(this, \`${escapeHtml(m.text).replace(/`/g, '\\`')}\`)" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </button>
-          </div>
-        </div>
-        `;
+      thread.innerHTML = msgs.slice().reverse().map(function(m) {
+        var pColor = getProjectColor(m.targetId);
+        var label = m.from === 'user' ? 'User &rarr; ' + escapeHtml(m.targetId || 'global') : 'Agent (' + escapeHtml(m.targetId || 'global') + ') &rarr; User';
+        var time = new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="margin-right: auto; margin-left: 0; max-width: 100%; border-bottom-left-radius: 4px; border-bottom-right-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);">' +
+          '<div class="msg-meta">' +
+            '<span style="color: ' + pColor + '; font-weight: bold; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(m.targetId) + '\')">' + label + '</span>' +
+            '<span>' + time + '</span>' +
+          '</div>' +
+          '<div style="position: relative;">' +
+            '<div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">' + escapeHtml(m.text) + '</div>' +
+            '<button onclick="copyToClipboard(this, ' + JSON.stringify(m.text) + ')" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
+            '</button>' +
+          '</div>' +
+        '</div>';
       }).join('');
       thread.scrollTop = thread.scrollHeight;
     }
@@ -782,12 +780,12 @@
             const banner = document.getElementById('active-project-banner');
             const dot = document.getElementById('active-project-dot');
             if (banner && dot) {
-               banner.style.background = \`\${projColor}1A\`; // 10% opacity
-               banner.style.borderColor = \`\${projColor}4D\`; // 30% opacity
+               banner.style.background = projColor + '1A';
+               banner.style.borderColor = projColor + '4D';
                dot.style.background = projColor;
-               dot.style.boxShadow = \`0 0 8px \${projColor}\`;
+               dot.style.boxShadow = '0 0 8px ' + projColor;
                selector.style.color = projColor;
-               selector.style.borderColor = \`\${projColor}66\`;
+               selector.style.borderColor = projColor + '66';
             }
         }
       }
@@ -798,28 +796,25 @@
         // Active Windows section
         if (data.activeWindows && data.activeWindows.length > 0) {
           html += '<h4 style="margin: 0 0 10px 0; color: #10b981;">Active IDE Windows</h4>';
-          html += data.activeWindows.map(w => {
-            const projName = w.projectName || w.title;
-            const pColor = getProjectColor(projName);
-            const isSelected = data.selectedProject && ((data.selectedProject.id && data.selectedProject.id === w.id) || (typeof data.selectedProject === 'string' && projName.includes(data.selectedProject)));
-            const style = isSelected ? \`border-color: \${pColor}; box-shadow: 0 0 10px \${pColor}33; background: \${pColor}1A;\` : '';
-            const safeTitle = projName.replace(/'/g, "\\'");
-            const lastActive = data.activity && data.activity[projName] ? new Date(data.activity[projName]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Just now';
-            return \`
-            <div class="project-card" style="\${style}" onclick="selectProject('\${safeTitle}')">
-              <div class="project-icon" style="background: \${pColor};">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
-              </div>
-              <div style="flex: 1;">
-                <div style="font-weight: 600; font-size: 15px; color: white;">\${escapeHtml(projName)}</div>
-                <div style="font-size: 12px; color: \${pColor}; margin-top: 4px;">Active Window</div>
-              </div>
-              <div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.7;">
-                <div>Active</div>
-                <div>\${lastActive}</div>
-              </div>
-            </div>
-            \`;
+          html += data.activeWindows.map(function(w) {
+            var projName = w.projectName || w.title;
+            var pColor = getProjectColor(projName);
+            var isSelected = data.selectedProject && ((data.selectedProject.id && data.selectedProject.id === w.id) || (typeof data.selectedProject === 'string' && projName.includes(data.selectedProject)));
+            var style = isSelected ? 'border-color: ' + pColor + '; box-shadow: 0 0 10px ' + pColor + '33; background: ' + pColor + '1A;' : '';
+            var safeTitle = projName.replace(/'/g, "\\'");
+            var lastActive = data.activity && data.activity[projName] ? new Date(data.activity[projName]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Just now';
+            return '<div class="project-card" style="' + style + '" onclick="selectProject(\'' + safeTitle + '\')">' +
+              '<div class="project-icon" style="background: ' + pColor + ';">' +
+                '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' +
+              '</div>' +
+              '<div style="flex: 1;">' +
+                '<div style="font-weight: 600; font-size: 15px; color: white;">' + escapeHtml(projName) + '</div>' +
+                '<div style="font-size: 12px; color: ' + pColor + '; margin-top: 4px;">Active Window</div>' +
+              '</div>' +
+              '<div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.7;">' +
+                '<div>Active</div><div>' + lastActive + '</div>' +
+              '</div>' +
+            '</div>';
           }).join('');
           html += '<div style="height: 16px;"></div>';
         }
@@ -828,24 +823,21 @@
         if (data.projects.length === 0) {
           html += '<div style="padding:20px; text-align:center;">No workspaces found.</div>';
         } else {
-          html += data.projects.map(p => {
-            const pColor = getProjectColor(p);
-            const isSelected = typeof data.selectedProject === 'string' ? data.selectedProject === p : (data.selectedProject && (data.selectedProject.projectName || data.selectedProject.title) === p);
-            const style = isSelected ? \`border-color: \${pColor}; background: \${pColor}1A;\` : '';
-            const lastActive = data.activity && data.activity[p] ? new Date(data.activity[p]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-            return \`
-            <div class="project-card" style="\${style}" onclick="selectProject('\${p}')">
-              <div class="project-icon" style="background: \${pColor}33; color: \${pColor}; border: 1px solid \${pColor}66;">\${p.substring(0,1).toUpperCase()}</div>
-              <div style="flex: 1;">
-                <div style="font-weight: 600; font-size: 16px;">\${p}</div>
-                <div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Workspace</div>
-              </div>
-              <div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.6;">
-                <div>Last Edit</div>
-                <div>\${lastActive}</div>
-              </div>
-            </div>
-            \`;
+          html += data.projects.map(function(p) {
+            var pColor = getProjectColor(p);
+            var isSelected = typeof data.selectedProject === 'string' ? data.selectedProject === p : (data.selectedProject && (data.selectedProject.projectName || data.selectedProject.title) === p);
+            var style = isSelected ? 'border-color: ' + pColor + '; background: ' + pColor + '1A;' : '';
+            var lastActive = data.activity && data.activity[p] ? new Date(data.activity[p]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+            return '<div class="project-card" style="' + style + '" onclick="selectProject(\'' + p + '\')">' +
+              '<div class="project-icon" style="background: ' + pColor + '33; color: ' + pColor + '; border: 1px solid ' + pColor + '66;">' + p.substring(0,1).toUpperCase() + '</div>' +
+              '<div style="flex: 1;">' +
+                '<div style="font-weight: 600; font-size: 16px;">' + p + '</div>' +
+                '<div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Workspace</div>' +
+              '</div>' +
+              '<div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.6;">' +
+                '<div>Last Edit</div><div>' + lastActive + '</div>' +
+              '</div>' +
+            '</div>';
           }).join('');
         }
         grid.innerHTML = html;
@@ -933,34 +925,38 @@
     }
 
     // --- Chat Logic ---
+    function renderApprovalButtons(m) {
+      if (!m.approvalId) return '';
+      if (m.approvalStatus === 'approved' || m.approvalStatus === 'denied') {
+        return '<div style="margin-top: 8px; font-size: 11px; color: var(--text-dim); font-weight: bold; text-transform: uppercase;">[ ' + m.approvalStatus + ' ]</div>';
+      }
+      return '<div style="margin-top: 8px; display: flex; gap: 6px;">' +
+        '<button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction(\'' + m.approvalId + '\', \'approve\', false)">Approve</button>' +
+        '<button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction(\'' + m.approvalId + '\', \'approve\', true)">Allow Always</button>' +
+        '<button class="danger" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction(\'' + m.approvalId + '\', \'deny\')">Deny</button>' +
+        '</div>';
+    }
+
     function renderMessages(msgs) {
       const thread = document.getElementById('chat-thread');
       if (msgs.length === 0) {
         thread.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No messages yet.</div>';
         return;
       }
-      thread.innerHTML = msgs.slice().reverse().map(m => `
-        <div class="msg ${m.from === 'agent' ? 'agent' : 'user'}">
-          <div class="msg-meta"><span>${m.from}</span><span>${new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span></div>
-          <div style="position: relative;">
-            <div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(m.text)}</div>
-            <button onclick="copyToClipboard(this, \`${escapeHtml(m.text).replace(/`/g, '\\`')}\`)" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-            </button>
-          </div>
-          ${m.approvalId ? `
-              ${(m.approvalStatus === 'approved' || m.approvalStatus === 'denied') ? `
-                 <div style="margin-top: 8px; font-size: 11px; color: var(--text-dim); font-weight: bold; text-transform: uppercase;">[ ${m.approvalStatus} ]</div>
-              ` : `
-                 <div style="margin-top: 8px; display: flex; gap: 6px;">
-                    <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', false)">Approve</button>
-                    <button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'approve', true)">Allow Always</button>
-                    <button class="danger" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction('${m.approvalId}', 'deny')">Deny</button>
-                 </div>
-              `}
-          ` : ''}
-        </div>
-      `).join('');
+      thread.innerHTML = msgs.slice().reverse().map(function(m) {
+        var safeText = escapeHtml(m.text);
+        var time = new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '">' +
+          '<div class="msg-meta"><span>' + m.from + '</span><span>' + time + '</span></div>' +
+          '<div style="position: relative;">' +
+            '<div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">' + safeText + '</div>' +
+            '<button onclick="copyToClipboard(this, ' + JSON.stringify(m.text) + ')" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
+              '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
+            '</button>' +
+          '</div>' +
+          renderApprovalButtons(m) +
+        '</div>';
+      }).join('');
       thread.scrollTop = thread.scrollHeight;
     }
 
