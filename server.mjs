@@ -93,15 +93,16 @@ async function runPokeScript() {
     if (pendingMsgs.length > 0) {
         msgText = pendingMsgs.map(m => m.text).join('\n\n');
         // Always append a secret instruction so the agent knows HOW to reply to the mobile UI
-        msgText += \`\n\n<system_note>Important: The user sent this message from the [\${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>\`;
-        log('POKE', \`Injecting \${pendingMsgs.length} messages. Total length: \${msgText.length}\`);
+        msgText += `\n\n<system_note>Important: The user sent this message from the [${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>`;
+        log('POKE', `Injecting ${pendingMsgs.length} messages. Total length: ${msgText.length}`);
     }
+
     if (!target) {
         log('POKE', 'Failed: No targets found across any connectors.');
         return { ok: false, error: 'no_targets' };
     }
 
-    log('POKE', \`Routing poke to \${target.connectorId} plugin -> \${finalProjectName}\`);
+    log('POKE', `Routing poke to ${target.connectorId} plugin -> ${finalProjectName}`);
 
     // 2. Execute Plugin
     const pokeMetadata = {
@@ -710,7 +711,7 @@ app.post('/debug/create-approval', requireAuth, (req, res) => {
 // --- New v0.3 Endpoints ---
 
 // POST /messages/send
-app.post('/messages/send', checkAuth, (req, res) => {
+app.post('/messages/send', checkAuth, async (req, res) => {
     console.log('[DEBUG] HEX DUMP /messages/send body:', JSON.stringify(req.body));
     const { to, channel, text, project, senderAlias } = req.body;
     let { from } = req.body;
@@ -718,6 +719,14 @@ app.post('/messages/send', checkAuth, (req, res) => {
 
     if (!to || !text) return res.status(400).json({ ok: false, error: 'missing_fields' });
     
+    // Auto-align targetProject when user submits a message from the mobile UI
+    if (from === 'user' && project) {
+        const targets = await getAllTargets();
+        const found = targets.find(t => t.id === project || t.title.includes(project) || t.url?.includes(project) || t.projectName === project);
+        STATE.targetProject = found || { title: project, projectName: project, connectorId: 'antigravity' };
+        saveState();
+    }
+
     // Allow user to forcefully unstick the agent UI state via Quick Actions
     if (text.toUpperCase().includes('ABORT') || text.toUpperCase().includes('STOP')) {
         STATE.agent.state = 'idle';
@@ -733,10 +742,19 @@ app.post('/messages/send', checkAuth, (req, res) => {
         } else if (STATE.targetProject.projectName) {
             defaultTargetId = STATE.targetProject.projectName;
         } else if (STATE.targetProject.title) {
-            defaultTargetId = STATE.targetProject.title.replace(' - Visual Studio Code', '');
+            defaultTargetId = STATE.targetProject.title.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
         }
     }
-    const targetId = project || defaultTargetId;
+    
+    let targetId = project || defaultTargetId;
+    
+    // Self-healing lane alignment: Inherit the last user message's targetId if agent replies without project context
+    if (from === 'agent' && !project) {
+        const lastUserMsg = STATE.messages.slice().reverse().find(m => m.from === 'user');
+        if (lastUserMsg && lastUserMsg.targetId) {
+            targetId = lastUserMsg.targetId;
+        }
+    }
 
     const prefix = senderAlias ? `[${senderAlias}] ` : '[Mobile] ';
 
