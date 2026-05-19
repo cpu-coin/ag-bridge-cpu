@@ -638,16 +638,29 @@
       '#a855f7', // Purple
       '#ec4899', // Pink
       '#06b6d4', // Cyan
+      '#6366f1', // Indigo
     ];
+    var knownProjects = [];
+    var projectColorMap = {};
+
+    function registerProject(name) {
+      if (!name || name === 'global' || name === 'Global Scope') return;
+      if (knownProjects.indexOf(name) === -1) {
+        knownProjects.push(name);
+        knownProjects.sort();
+        projectColorMap = {};
+        for (var i = 0; i < knownProjects.length; i++) {
+          projectColorMap[knownProjects[i]] = RAINBOW_COLORS[i % RAINBOW_COLORS.length];
+        }
+      }
+    }
+
     function getProjectColor(projName) {
       if (!projName || projName === 'global' || projName === 'Global Scope') {
         return '#10b981'; // Emerald/Green for Global
       }
-      let hash = 0;
-      for (let i = 0; i < projName.length; i++) {
-        hash = projName.charCodeAt(i) + ((hash << 5) - hash);
-      }
-      return RAINBOW_COLORS[Math.abs(hash) % RAINBOW_COLORS.length];
+      registerProject(projName);
+      return projectColorMap[projName] || RAINBOW_COLORS[0];
     }
     
     // --- Fetches ---
@@ -748,6 +761,19 @@
       }
 
       if (data) {
+        // Collect and register all known projects first to ensure clean alphabetized color assignments without overlap
+        if (data.activeWindows) {
+            data.activeWindows.forEach(w => {
+                const projName = w.projectName || w.title;
+                if (projName) registerProject(projName);
+            });
+        }
+        if (data.projects) {
+            data.projects.forEach(p => {
+                if (p) registerProject(p);
+            });
+        }
+
         let optionsHtml = '<option value="global" style="color: black;">Global Scope</option>';
         const addedValues = new Set(['global']);
         if (data.activeWindows) {
@@ -755,7 +781,8 @@
                 const projName = w.projectName || w.title;
                 if (!addedValues.has(projName)) {
                     addedValues.add(projName);
-                    optionsHtml += `<option value="${escapeHtml(projName)}" style="color: black;">🟢 ${escapeHtml(projName)}</option>`;
+                    const optColor = getProjectColor(projName);
+                    optionsHtml += `<option value="${escapeHtml(projName)}" style="color: ${optColor}; font-weight: 600;">🟢 ${escapeHtml(projName)}</option>`;
                 }
             });
         }
@@ -763,7 +790,8 @@
             data.projects.forEach(p => {
                 if (!addedValues.has(p)) {
                     addedValues.add(p);
-                    optionsHtml += `<option value="${escapeHtml(p)}" style="color: black;">📁 ${escapeHtml(p)}</option>`;
+                    const optColor = getProjectColor(p);
+                    optionsHtml += `<option value="${escapeHtml(p)}" style="color: ${optColor}; font-weight: 600;">📁 ${escapeHtml(p)}</option>`;
                 }
             });
         }
@@ -787,6 +815,10 @@
                selector.style.color = projColor;
                selector.style.borderColor = projColor + '66';
             }
+            
+            // Dynamically adapt the global CSS variables to the selected project's custom theme color
+            document.documentElement.style.setProperty('--primary', projColor);
+            document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
         }
       }
 
@@ -943,11 +975,24 @@
         thread.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No messages yet.</div>';
         return;
       }
+      const selector = document.getElementById('chat-project-selector');
+      const currentProj = selector ? selector.value : 'global';
+      const pColor = getProjectColor(currentProj);
+
       thread.innerHTML = msgs.slice().reverse().map(function(m) {
         var safeText = escapeHtml(m.text);
         var time = new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '">' +
-          '<div class="msg-meta"><span>' + m.from + '</span><span>' + time + '</span></div>' +
+        var msgStyle = '';
+        if (m.from === 'user') {
+          msgStyle = 'background: linear-gradient(135deg, ' + pColor + '1A, ' + pColor + '33); border: 1px solid ' + pColor + '4D; margin-left: auto; border-bottom-right-radius: 4px;';
+        } else {
+          msgStyle = 'background: rgba(255, 255, 255, 0.03); border: 1px solid ' + pColor + '26; margin-right: auto; border-bottom-left-radius: 4px; color: #ddd;';
+        }
+        var senderLabel = m.from === 'user' ? 'User' : 'Agent';
+        var labelStyle = 'color: ' + pColor + '; font-weight: 700;';
+
+        return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="' + msgStyle + '">' +
+          '<div class="msg-meta"><span style="' + labelStyle + '">' + senderLabel + '</span><span>' + time + '</span></div>' +
           '<div style="position: relative;">' +
             '<div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">' + safeText + '</div>' +
             '<button onclick="copyToClipboard(this, ' + JSON.stringify(m.text) + ')" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
