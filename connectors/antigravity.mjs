@@ -85,10 +85,6 @@ export async function getTargets() {
 const makePokeExpression = (messageContent) => `(async () => {
     const text = ${JSON.stringify(messageContent)};
 
-    // Attempt to open chat panel via Cmd+L
-    document.dispatchEvent(new KeyboardEvent('keydown', { metaKey: true, key: 'l', code: 'KeyL', keyCode: 76, bubbles: true }));
-    await new Promise(r => setTimeout(r, 800)); // Increased to 800ms to allow lazy-loading of the chat panel DOM
-
     // 1. Check for blocking "Cancel" button (Agent is busy)
     const cancel = document.querySelector('[data-tooltip-id="input-send-button-cancel-tooltip"]');
     if (cancel && cancel.offsetParent !== null) {
@@ -103,6 +99,7 @@ const makePokeExpression = (messageContent) => `(async () => {
     function findInRoot(root) {
         if (!root || !root.querySelectorAll) return null;
         const selector = '#cascade [data-lexical-editor="true"][contenteditable="true"][role="textbox"], ' +
+                         'div[contenteditable="true"][role="combobox"], ' +
                          'div[contenteditable="true"][role="textbox"], ' +
                          '.monaco-editor textarea, ' +
                          'textarea[aria-label*="Ask"], textarea[aria-label*="Chat"], ' +
@@ -131,8 +128,15 @@ const makePokeExpression = (messageContent) => `(async () => {
         }
         return null;
     }
-
-    const editor = await findEditorAsync();
+    // Try finding editor immediately (v2.0 has it always visible)
+    let editor = await findEditorAsync();
+    
+    // Fallback: Try opening chat panel via Cmd+L (legacy Antigravity)
+    if (!editor) {
+        document.dispatchEvent(new KeyboardEvent('keydown', { metaKey: true, key: 'l', code: 'KeyL', keyCode: 76, bubbles: true }));
+        await new Promise(r => setTimeout(r, 800));
+        editor = await findEditorAsync();
+    }
     if (!editor) return { ok:false, error:"editor_not_found" };
 
     // text definition moved up
