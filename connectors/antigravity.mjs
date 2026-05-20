@@ -2,7 +2,21 @@ import http from 'http';
 
 export const CONNECTOR_ID = 'antigravity';
 export const CONNECTOR_NAME = 'Antigravity IDE';
-const PORTS = [9000, 9001, 9002, 9003];
+const STATIC_PORTS = [9000, 9001, 9002, 9003];
+
+// Dynamically discover Antigravity's CDP port (the upgrade uses --remote-debugging-port=0)
+async function discoverPorts() {
+    const ports = new Set(STATIC_PORTS);
+    try {
+        const { execSync } = await import('child_process');
+        const out = execSync("lsof -i -nP 2>/dev/null | grep -i 'Antigravi' | grep 'LISTEN'", { encoding: 'utf8', timeout: 3000 });
+        const matches = out.matchAll(/:(\d+)\s+\(LISTEN\)/g);
+        for (const m of matches) {
+            ports.add(parseInt(m[1], 10));
+        }
+    } catch (e) { /* lsof not available or no results */ }
+    return [...ports];
+}
 
 function getJson(url) {
     return new Promise((resolve, reject) => {
@@ -30,18 +44,35 @@ export function extractProjectName(title) {
 
 export async function getTargets() {
     const targets = [];
-    for (const port of PORTS) {
+    const ports = await discoverPorts();
+    for (const port of ports) {
         try {
             const list = await getJson(`http://127.0.0.1:${port}/json/list`);
             for (const t of list) {
-                if (t.url.includes('workbench') || (t.title && t.title.includes('workbench'))) {
+                // Skip chrome extensions, service workers, diff workers, and blank pages
+                const url = t.url || '';
+                const title = t.title || '';
+                if (url.includes('chrome-extension://') ||
+                    url.includes('chrome://') ||
+                    url.includes('diff_worker') ||
+                    url.includes('stripe.com') ||
+                    url.includes('stripe.network') ||
+                    url.includes('accounts.google.com') ||
+                    (!title && !url)) continue;
+
+                // Accept workbench targets (legacy) AND conversation targets (v2.0 upgrade)
+                const isWorkbench = url.includes('workbench');
+                const isConversation = url.includes('/c/');
+                const isLocalPage = url.startsWith('file://') || url.startsWith('http://localhost') || url.startsWith('https://127.0.0.1');
+
+                if (isWorkbench || isConversation || isLocalPage) {
                     targets.push({
                         connectorId: CONNECTOR_ID,
                         id: t.id,
-                        title: t.title,
-                        projectName: extractProjectName(t.title),
+                        title: title,
+                        projectName: extractProjectName(title),
                         port: port,
-                        url: t.url,
+                        url: url,
                         webSocketDebuggerUrl: t.webSocketDebuggerUrl
                     });
                 }
