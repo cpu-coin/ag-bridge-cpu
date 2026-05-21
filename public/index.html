@@ -268,6 +268,7 @@
     .convo-count { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: rgba(255,255,255,0.08); color: var(--text-dim); flex-shrink: 0; margin-left: auto; }
     .chevron { transition: transform 0.2s ease; font-size: 12px; color: var(--text-dim); margin-left: 6px; flex-shrink: 0; }
     .chevron.open { transform: rotate(90deg); }
+    @keyframes pulse-glow { 0%,100% { box-shadow: none; } 50% { box-shadow: 0 0 12px #f43f5e, inset 0 0 8px rgba(244,63,94,0.15); } }
 
     /* Approvals */
     .approval-item { border-left: 4px solid var(--primary); }
@@ -598,7 +599,7 @@
       fetchAgentStatus();
       connectWS();
       // Refresh data every 5s, separately from WS events
-      setInterval(() => { fetchMessages(); fetchAgentStatus(); fetchStatus(); }, 5000);
+      setInterval(() => { fetchMessages(); fetchAgentStatus(); fetchStatus(); fetchApprovals(); }, 5000);
       // Health poll: independently verify server is up even when WS is broken
       healthTimer = setInterval(() => pollHealth(), 10000);
     }
@@ -1026,29 +1027,61 @@
       const data = await api('/approvals');
       if (data && data.approvals) {
         const container = document.getElementById('approvals-list');
+        const pendingCount = data.approvals.filter(a => a.status === 'pending').length;
+
+        // Update nav badge
+        var badge = document.getElementById('pending-badge');
+        if (badge) {
+          badge.textContent = pendingCount;
+          if (pendingCount > 0) { badge.classList.remove('hidden'); } else { badge.classList.add('hidden'); }
+        }
+        // Also update the approvals nav item with a visual indicator
+        var navApprovals = document.getElementById('nav-queue');
+        if (navApprovals) {
+          if (pendingCount > 0) {
+            navApprovals.style.position = 'relative';
+            var dot = navApprovals.querySelector('.approval-dot');
+            if (!dot) {
+              dot = document.createElement('span');
+              dot.className = 'approval-dot';
+              dot.style.cssText = 'position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#f43f5e;box-shadow:0 0 6px #f43f5e;';
+              navApprovals.appendChild(dot);
+            }
+          } else {
+            var dot = navApprovals.querySelector('.approval-dot');
+            if (dot) dot.remove();
+          }
+        }
+
         if (data.approvals.length === 0) {
           container.innerHTML = '<p style="text-align:center; color:var(--text-dim); padding: 20px;">No pending approvals.</p>';
           return;
         }
-        container.innerHTML = data.approvals.map(item => `
-          <div class="glass-card approval-item status-${item.status}">
-            <div class="flex justify-between items-center mb-4">
-              <span class="tag ${item.status}">${item.status}</span>
-              <span style="font-size:11px; color:var(--text-dim)">${new Date(item.createdAt).toLocaleTimeString()}</span>
-            </div>
-            <div style="font-weight:600; margin-bottom: 8px;">
-              <span style="color: var(--primary); cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat('${escapeHtml(item.meta && item.meta.clientTag ? item.meta.clientTag : '')}')">[${escapeHtml(item.meta && item.meta.clientTag ? item.meta.clientTag : 'global')}]</span>
-              ${item.kind.toUpperCase()}
-            </div>
-            <pre>${JSON.stringify(item.details, null, 2)}</pre>
-            ${item.status === 'pending' ? `
-              <div class="flex gap-4 mt-4">
-                <button class="danger" onclick="api('/approvals/${item.id}/deny', 'POST').then(() => fetchApprovals())">Deny</button>
-                <button class="success" onclick="api('/approvals/${item.id}/approve', 'POST').then(() => fetchApprovals())">Approve</button>
-              </div>
-            ` : ''}
-          </div>
-        `).join('');
+        container.innerHTML = data.approvals.map(function(item) {
+          var projTag = (item.meta && item.meta.clientTag) ? item.meta.clientTag : 'global';
+          var pColor = getProjectColor(projTag);
+          var timeStr = new Date(item.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          var buttonsHtml = '';
+          if (item.status === 'pending') {
+            buttonsHtml = '<div class="flex gap-4 mt-4">' +
+              '<button class="danger" onclick="handleApprovalAction(\'' + item.id + '\', \'deny\')" style="flex:1;">Deny</button>' +
+              '<button class="success" onclick="handleApprovalAction(\'' + item.id + '\', \'approve\', false)" style="flex:1;">Approve</button>' +
+              '<button class="secondary" onclick="handleApprovalAction(\'' + item.id + '\', \'approve\', true)" style="flex:1; font-size:11px;">Always</button>' +
+            '</div>';
+          }
+          return '<div class="glass-card approval-item status-' + item.status + '" style="border-left-color: ' + pColor + ';">' +
+            '<div class="flex justify-between items-center mb-4">' +
+              '<span class="tag ' + item.status + '">' + item.status + '</span>' +
+              '<span style="font-size:11px; color:var(--text-dim)">' + timeStr + '</span>' +
+            '</div>' +
+            '<div style="font-weight:600; margin-bottom: 8px;">' +
+              '<span style="color: ' + pColor + '; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(projTag) + '\')">[' + escapeHtml(projTag) + ']</span> ' +
+              item.kind.toUpperCase() +
+            '</div>' +
+            '<pre>' + JSON.stringify(item.details, null, 2) + '</pre>' +
+            buttonsHtml +
+          '</div>';
+        }).join('');
       }
     }
 
@@ -1216,7 +1249,17 @@
       WS.onmessage = (msg) => {
         try {
           const data = JSON.parse(msg.data);
-          if (data.event === 'approval_requested') { playPing(); fetchApprovals(); }
+          if (data.event === 'approval_requested') {
+            playPing();
+            fetchApprovals();
+            // Flash the approvals nav item
+            var navQ = document.getElementById('nav-queue');
+            if (navQ) {
+              navQ.style.animation = 'none';
+              navQ.offsetHeight; // reflow
+              navQ.style.animation = 'pulse-glow 0.6s ease 3';
+            }
+          }
           if (data.event === 'approval_decided') fetchApprovals();
           if (data.event === 'message_new') fetchMessages();
           if (data.event === 'agent_status') fetchAgentStatus();

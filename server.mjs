@@ -1294,6 +1294,28 @@ async function pollMemflowOutbox() {
                     STATE.messages.push(msg);
                     broadcast('message_new', msg);
                     log('MEMFLOW', `Relayed agent response to mobile: ${msg.id}`);
+
+                    // If this is an approval request, auto-create an approval entry
+                    if (resp.channel === 'approval' || (resp.text && resp.text.startsWith('Approval Required'))) {
+                        const approvalId = resp.approvalId || `appr_mf_${baseId}`;
+                        const existingApproval = STATE.approvals.find(a => a.id === approvalId);
+                        if (!existingApproval) {
+                            const newApproval = {
+                                id: approvalId,
+                                createdAt: resp.createdAt || new Date().toISOString(),
+                                kind: resp.kind || 'command',
+                                details: resp.details || { cmd: resp.text, risk: resp.risk || 'medium' },
+                                status: 'pending',
+                                decidedAt: null,
+                                meta: { clientTag: resp.project || 'global', source: 'memflow' }
+                            };
+                            STATE.approvals.push(newApproval);
+                            msg.approvalId = approvalId;
+                            saveApprovals();
+                            broadcast('approval_requested', newApproval);
+                            log('MEMFLOW', `Created approval from MemFlow: ${approvalId}`);
+                        }
+                    }
                 }
                 
                 if (resp.memflowId) {
