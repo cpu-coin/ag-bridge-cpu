@@ -42,6 +42,12 @@ export function extractProjectName(title) {
     return p.replace(' (Workspace)', '').trim();
 }
 
+export function extractConversationId(url) {
+    if (!url) return null;
+    const match = url.match(/\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    return match ? match[1] : null;
+}
+
 export async function getTargets() {
     const targets = [];
     const ports = await discoverPorts();
@@ -73,7 +79,9 @@ export async function getTargets() {
                         projectName: extractProjectName(title),
                         port: port,
                         url: url,
-                        webSocketDebuggerUrl: t.webSocketDebuggerUrl
+                        webSocketDebuggerUrl: t.webSocketDebuggerUrl,
+                        conversationId: extractConversationId(url),
+                        isConversation: url.includes('/c/')
                     });
                 }
             }

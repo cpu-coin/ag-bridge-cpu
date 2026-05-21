@@ -247,13 +247,27 @@
 
     /* Projects Grid */
     .projects-grid {
-      display: grid; grid-template-columns: 1fr; gap: 12px;
+      display: grid; grid-template-columns: 1fr; gap: 10px;
     }
     .project-card {
-      background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border); border-radius: 12px; padding: 16px; display: flex; align-items: center; cursor: pointer; transition: 0.2s;
+      background: rgba(255, 255, 255, 0.02); border: 1px solid var(--glass-border); border-radius: 12px; padding: 14px 16px; display: flex; align-items: center; cursor: pointer; transition: 0.2s;
     }
     .project-card:hover { background: rgba(255, 255, 255, 0.05); border-color: var(--primary); }
-    .project-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 16px; }
+    .project-card.inactive { opacity: 0.45; }
+    .project-card.inactive:hover { opacity: 0.7; }
+    .project-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--accent)); display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; margin-right: 14px; flex-shrink: 0; }
+    .convo-list { margin: 0; padding: 0 0 0 54px; list-style: none; overflow: hidden; transition: max-height 0.3s ease, opacity 0.3s ease; }
+    .convo-list.collapsed { max-height: 0; opacity: 0; }
+    .convo-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin: 2px 0; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--text-dim); transition: 0.15s; border: 1px solid transparent; }
+    .convo-item:hover { background: rgba(255,255,255,0.05); color: white; }
+    .convo-item.selected { background: rgba(255,255,255,0.08); color: white; border-color: var(--primary); }
+    .convo-item .convo-icon { font-size: 14px; flex-shrink: 0; }
+    .convo-item .convo-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .new-convo-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: var(--text-dim); font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.15s; flex-shrink: 0; padding: 0; box-shadow: none; }
+    .new-convo-btn:hover { border-color: var(--primary); color: var(--primary); background: rgba(255,255,255,0.05); }
+    .convo-count { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 10px; background: rgba(255,255,255,0.08); color: var(--text-dim); flex-shrink: 0; margin-left: auto; }
+    .chevron { transition: transform 0.2s ease; font-size: 12px; color: var(--text-dim); margin-left: 6px; flex-shrink: 0; }
+    .chevron.open { transform: rotate(90deg); }
 
     /* Approvals */
     .approval-item { border-left: 4px solid var(--primary); }
@@ -409,7 +423,7 @@
     <div id="tab-projects" class="tab-content">
       <div class="glass-card">
         <div class="flex justify-between items-center mb-4">
-          <h3>Local Workspaces</h3>
+          <h3>Projects</h3>
           <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="fetchProjects()">Refresh</button>
         </div>
         <div id="projects-grid" class="projects-grid">
@@ -827,118 +841,218 @@
             });
         }
         if (selector) {
-            selector.innerHTML = optionsHtml;
-            // Find the best matching option value (exact, then partial)
-            const allValues = [...selector.options].map(o => o.value);
-            const exactMatch = allValues.find(v => v === currentSelectionTitle);
-            const partialMatch = !exactMatch && allValues.find(v => currentSelectionTitle.includes(v) || v.includes(currentSelectionTitle));
-            selector.value = exactMatch || partialMatch || 'global';
-            
-            // Update UI colors based on selection
-            const projColor = getProjectColor(selector.value);
-            const banner = document.getElementById('active-project-banner');
-            const dot = document.getElementById('active-project-dot');
-            if (banner && dot) {
-               banner.style.background = projColor + '1A';
-               banner.style.borderColor = projColor + '4D';
-               dot.style.background = projColor;
-               dot.style.boxShadow = '0 0 8px ' + projColor;
-               selector.style.color = projColor;
-               selector.style.borderColor = projColor + '66';
-            }
-            
-            // Dynamically adapt the global CSS variables to the selected project's custom theme color
-            document.documentElement.style.setProperty('--primary', projColor);
-            document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+      // Normalize selectedProject
+      let selectedName = '';
+      if (data.selectedProject) {
+        if (typeof data.selectedProject === 'string') {
+          selectedName = data.selectedProject;
+        } else if (data.selectedProject.projectName) {
+          selectedName = data.selectedProject.projectName;
+        } else if (data.selectedProject.title) {
+          selectedName = data.selectedProject.title.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
         }
       }
 
-      if (data && data.projects) {
-        let html = '';
-        
-        // Active Windows section
-        if (data.activeWindows && data.activeWindows.length > 0) {
-          html += '<h4 style="margin: 0 0 10px 0; color: #10b981;">Active IDE Windows</h4>';
-          html += data.activeWindows.map(function(w) {
-            var projName = w.projectName || w.title;
-            var pColor = getProjectColor(projName);
-            var isSelected = data.selectedProject && ((data.selectedProject.id && data.selectedProject.id === w.id) || (typeof data.selectedProject === 'string' && projName.includes(data.selectedProject)));
-            var style = isSelected ? 'border-color: ' + pColor + '; box-shadow: 0 0 10px ' + pColor + '33; background: ' + pColor + '1A;' : '';
-            var safeTitle = projName.replace(/'/g, "\\'");
-            var lastActive = data.activity && data.activity[projName] ? new Date(data.activity[projName]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Just now';
-            return '<div class="project-card" style="' + style + '" onclick="selectProject(\'' + safeTitle + '\')">' +
-              '<div class="project-icon" style="background: ' + pColor + ';">' +
-                '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>' +
-              '</div>' +
-              '<div style="flex: 1;">' +
-                '<div style="font-weight: 600; font-size: 15px; color: white;">' + escapeHtml(projName) + '</div>' +
-                '<div style="font-size: 12px; color: ' + pColor + '; margin-top: 4px;">Active Window</div>' +
-              '</div>' +
-              '<div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.7;">' +
-                '<div>Active</div><div>' + lastActive + '</div>' +
-              '</div>' +
-            '</div>';
-          }).join('');
-          html += '<div style="height: 16px;"></div>';
+      // Update chat-project-selector with two-level options
+      if (selector) {
+        const oldValue = selector.value;
+        selector.innerHTML = '<option value="global" style="color: black;">Global Scope</option>';
+
+        const grouped = data.projectsGrouped || [];
+        grouped.forEach(function(proj) {
+          // Add project-level option
+          var option = document.createElement('option');
+          option.value = proj.name;
+          option.text = (proj.hasActiveConversations ? '🟢 ' : '📁 ') + proj.name;
+          option.style.color = 'black';
+          if (proj.name === selectedName && !selectedConversationId) option.selected = true;
+          selector.appendChild(option);
+
+          // Add conversation-level options (indented)
+          if (proj.conversations && proj.conversations.length > 0) {
+            proj.conversations.forEach(function(c) {
+              var cOpt = document.createElement('option');
+              var cId = c.conversationId || c.id;
+              cOpt.value = proj.name + '::' + cId;
+              cOpt.text = '    💬 ' + (c.title || 'Conversation');
+              cOpt.style.color = 'black';
+              if (cId === selectedConversationId) cOpt.selected = true;
+              selector.appendChild(cOpt);
+            });
+          }
+        });
+
+        // Restore old value if still valid
+        if (oldValue && [...selector.options].find(o => o.value === oldValue)) {
+          selector.value = oldValue;
         }
 
-        html += '<h4 style="margin: 0 0 10px 0; color: var(--text-dim);">All Local Workspaces</h4>';
-        if (data.projects.length === 0) {
-          html += '<div style="padding:20px; text-align:center;">No workspaces found.</div>';
-        } else {
-          html += data.projects.map(function(p) {
-            var pColor = getProjectColor(p);
-            var isSelected = typeof data.selectedProject === 'string' ? data.selectedProject === p : (data.selectedProject && (data.selectedProject.projectName || data.selectedProject.title) === p);
-            var style = isSelected ? 'border-color: ' + pColor + '; background: ' + pColor + '1A;' : '';
-            var lastActive = data.activity && data.activity[p] ? new Date(data.activity[p]).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-            return '<div class="project-card" style="' + style + '" onclick="selectProject(\'' + p + '\')">' +
-              '<div class="project-icon" style="background: ' + pColor + '33; color: ' + pColor + '; border: 1px solid ' + pColor + '66;">' + p.substring(0,1).toUpperCase() + '</div>' +
-              '<div style="flex: 1;">' +
-                '<div style="font-weight: 600; font-size: 16px;">' + p + '</div>' +
-                '<div style="font-size: 12px; color: var(--text-dim); margin-top: 4px;">Workspace</div>' +
-              '</div>' +
-              '<div style="font-size: 10px; color: var(--text-dim); text-align: right; opacity: 0.6;">' +
-                '<div>Last Edit</div><div>' + lastActive + '</div>' +
-              '</div>' +
-            '</div>';
-          }).join('');
+        // Theme color
+        var activeProj = selector.value.split('::')[0];
+        if (activeProj && activeProj !== 'global') {
+          var projColor = getProjectColor(activeProj);
+          var banner = document.getElementById('active-project-banner');
+          var dot = document.getElementById('active-project-dot');
+          if (banner && dot) {
+            banner.style.background = projColor + '1A';
+            banner.style.borderColor = projColor + '4D';
+            dot.style.background = projColor;
+            dot.style.boxShadow = '0 0 8px ' + projColor;
+            selector.style.color = projColor;
+            selector.style.borderColor = projColor + '66';
+          }
+          document.documentElement.style.setProperty('--primary', projColor);
+          document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
         }
-        grid.innerHTML = html;
+      }
+
+      // Render projects grid with conversation hierarchy
+      if (grid) {
+        var grouped = data.projectsGrouped || [];
+        if (grouped.length === 0 && data.projects) {
+          // Fallback: build from flat list
+          grouped = data.projects.map(function(p) {
+            return { name: p, conversations: [], lastActivity: data.activity && data.activity[p] || null, messageCount: 0, hasActiveConversations: false };
+          });
+        }
+
+        var html = grouped.map(function(proj) {
+          var pColor = getProjectColor(proj.name);
+          var isActive = proj.hasActiveConversations;
+          var isSelectedProj = selectedName === proj.name;
+          var convos = proj.conversations || [];
+          var hasConvos = convos.length > 0;
+          var isExpanded = isSelectedProj && hasConvos;
+          var lastActive = proj.lastActivity ? new Date(proj.lastActivity).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '';
+          var safeName = proj.name.replace(/'/g, "\\'");
+
+          var cardStyle = isSelectedProj
+            ? 'border-color: ' + pColor + '; box-shadow: 0 0 10px ' + pColor + '33; background: ' + pColor + '1A;'
+            : '';
+          var cardClass = 'project-card' + (isActive ? '' : ' inactive');
+
+          var iconHtml = isActive
+            ? '<div class="project-icon" style="background: ' + pColor + ';"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg></div>'
+            : '<div class="project-icon" style="background: ' + pColor + '33; color: ' + pColor + '; border: 1px solid ' + pColor + '66;">' + proj.name.substring(0,1).toUpperCase() + '</div>';
+
+          var subtitleHtml = isActive
+            ? '<span style="color: ' + pColor + ';">' + convos.length + ' conversation' + (convos.length !== 1 ? 's' : '') + '</span>'
+            : '<span>' + (lastActive ? 'Last: ' + lastActive : 'Workspace') + '</span>';
+
+          // Conversation sub-list
+          var convoHtml = '';
+          if (hasConvos) {
+            convoHtml = '<ul class="convo-list' + (isExpanded ? '' : ' collapsed') + '" id="convo-list-' + safeName + '">';
+            convos.forEach(function(c) {
+              var cId = c.conversationId || c.id || '';
+              var cTitle = c.title || 'Conversation';
+              // Trim project name prefix from title if present
+              if (cTitle.startsWith(proj.name + ' — ')) cTitle = cTitle.substring(proj.name.length + 3);
+              if (cTitle.startsWith(proj.name)) cTitle = cTitle.substring(proj.name.length).replace(/^\s*[—–-]\s*/, '') || 'Conversation';
+              var isSel = cId === selectedConversationId;
+              var safeCId = cId.replace(/'/g, "\\'");
+              convoHtml += '<li class="convo-item' + (isSel ? ' selected' : '') + '" onclick="event.stopPropagation(); selectConversation(\'' + safeName + '\', \'' + safeCId + '\')" style="' + (isSel ? 'border-color: ' + pColor + ';' : '') + '">';
+              convoHtml += '<span class="convo-icon">💬</span>';
+              convoHtml += '<span class="convo-title">' + escapeHtml(cTitle) + '</span>';
+              convoHtml += '</li>';
+            });
+            convoHtml += '</ul>';
+          }
+
+          // Build card
+          var result = '<div>';
+          result += '<div class="' + cardClass + '" style="' + cardStyle + '" onclick="selectProject(\'' + safeName + '\')">';
+          result += iconHtml;
+          result += '<div style="flex: 1; min-width: 0;">';
+          result += '<div style="font-weight: 600; font-size: 15px; color: ' + (isActive ? 'white' : 'var(--text-dim)') + ';">' + escapeHtml(proj.name) + '</div>';
+          result += '<div style="font-size: 12px; color: var(--text-dim); margin-top: 3px;">' + subtitleHtml + '</div>';
+          result += '</div>';
+          // Right side: count badge + chevron + new button
+          if (hasConvos) {
+            result += '<span class="convo-count">' + convos.length + '</span>';
+            result += '<span class="chevron' + (isExpanded ? ' open' : '') + '" id="chevron-' + safeName + '">▶</span>';
+          }
+          result += '<button class="new-convo-btn" onclick="event.stopPropagation(); newConversation(\'' + safeName + '\')" title="New conversation">+</button>';
+          result += '</div>';
+          result += convoHtml;
+          result += '</div>';
+          return result;
+        }).join('');
+
+        grid.innerHTML = html || '<div style="padding:20px; text-align:center; color:var(--text-dim);">No projects found.</div>';
       }
     }
 
     async function selectProject(target) {
       let payload = target;
-      let displayTitle = '';
-      
       if (typeof target === 'string') {
-          payload = target.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
-          displayTitle = payload;
+        payload = target.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
       } else if (target && target.projectName) {
-          payload = target.projectName;
-          displayTitle = target.projectName;
+        payload = target.projectName;
       } else if (target && target.title) {
-          payload = target.title.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
-          displayTitle = payload;
+        payload = target.title.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
       } else {
-          payload = 'global';
-          displayTitle = 'Global Scope';
+        payload = 'global';
       }
 
       await api('/projects/select', 'POST', { project: payload });
-      
-      // Immediately update the selector display — don't wait for fetchProjects()
-      const selector = document.getElementById('chat-project-selector');
-      if (selector) {
-          const allValues = [...selector.options].map(o => o.value);
-          const match = allValues.find(v => v === displayTitle) || allValues.find(v => displayTitle.includes(v) || v.includes(displayTitle));
-          if (match) selector.value = match;
+
+      // Auto-select the most recent conversation for this project
+      selectedConversationId = null;
+      if (projectsData && projectsData.projectsGrouped) {
+        var proj = projectsData.projectsGrouped.find(function(p) { return p.name === payload; });
+        if (proj && proj.conversations && proj.conversations.length > 0) {
+          selectedConversationId = proj.conversations[0].conversationId || proj.conversations[0].id;
+        }
       }
 
-      // Switch to Chat Tab automatically
+      // Toggle conversation sub-list open/closed
+      var convoList = document.getElementById('convo-list-' + payload.replace(/'/g, "\\'"));
+      var chevron = document.getElementById('chevron-' + payload.replace(/'/g, "\\'"));
+      if (convoList) {
+        var isCollapsed = convoList.classList.contains('collapsed');
+        convoList.classList.toggle('collapsed');
+        if (chevron) chevron.classList.toggle('open', isCollapsed);
+      }
+
+      // Update selector
+      var selector = document.getElementById('chat-project-selector');
+      if (selector) {
+        if (selectedConversationId) {
+          selector.value = payload + '::' + selectedConversationId;
+        } else {
+          selector.value = payload;
+        }
+      }
+
       switchTab('tab-chat', document.getElementById('nav-chat'));
       await fetchProjects();
       await fetchMessages();
+    }
+
+    async function selectConversation(projectName, conversationId) {
+      selectedConversationId = conversationId;
+      await api('/projects/select', 'POST', { project: projectName });
+
+      var selector = document.getElementById('chat-project-selector');
+      if (selector) {
+        selector.value = projectName + '::' + conversationId;
+      }
+
+      // Update theme color
+      var projColor = getProjectColor(projectName);
+      document.documentElement.style.setProperty('--primary', projColor);
+      document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+
+      switchTab('tab-chat', document.getElementById('nav-chat'));
+      await fetchProjects();
+      await fetchMessages();
+    }
+
+    function newConversation(projectName) {
+      // Clear conversation selection = fresh chat for this project
+      selectedConversationId = null;
+      selectProject(projectName);
     }
 
     async function fetchStatus() {
@@ -1054,13 +1168,23 @@
       const text = input.value.trim();
       if (!text) return;
       
-      const currentProj = document.getElementById('chat-project-selector').value;
-      // Always send an explicit project tag — 'global' when Global is selected
-      const projectStr = (!currentProj || currentProj === 'Global Scope') ? 'global' : currentProj;
+      const selectorVal = document.getElementById('chat-project-selector').value;
+      // Parse project::conversationId format
+      let projectStr = 'global';
+      let convoId = null;
+      if (selectorVal && selectorVal !== 'global' && selectorVal !== 'Global Scope') {
+        if (selectorVal.includes('::')) {
+          var parts = selectorVal.split('::');
+          projectStr = parts[0];
+          convoId = parts[1];
+        } else {
+          projectStr = selectorVal;
+        }
+      }
       
       const senderAlias = localStorage.getItem('senderAlias') || 'Mobile';
       
-      await api('/messages/send', 'POST', { to: 'agent', channel: 'work', text, project: projectStr, senderAlias });
+      await api('/messages/send', 'POST', { to: 'agent', channel: 'work', text, project: projectStr, conversationId: convoId, senderAlias });
       input.value = '';
     }
 

@@ -949,7 +949,85 @@ app.get('/projects', checkAuth, async (req, res) => {
             return tB - tA;
         });
         
-        res.json({ ok: true, projects, activeWindows: dedupedWindows, activity: projectActivity, selectedProject: STATE.targetProject });
+        // Build projectsGrouped: group active conversations by project folder
+        const projectsGroupedMap = {};
+        // Initialize all known project folders
+        for (const proj of projects) {
+            projectsGroupedMap[proj] = {
+                name: proj,
+                conversations: [],
+                lastActivity: projectActivity[proj] || null,
+                messageCount: 0,
+                hasActiveConversations: false
+            };
+        }
+        // Count messages per project
+        for (const msg of STATE.messages) {
+            if (msg.targetId) {
+                const tId = msg.targetId.split('/').pop();
+                if (projectsGroupedMap[tId]) {
+                    projectsGroupedMap[tId].messageCount++;
+                }
+            }
+        }
+        // Group targets into projects
+        for (const w of dedupedWindows) {
+            // Try to match target to a project folder
+            const pName = w.projectName || w.title || '';
+            let projKey = null;
+            // 1. Exact match by projectName or title
+            if (pName && projectsGroupedMap[pName]) {
+                projKey = pName;
+            }
+            // 2. Check if title contains a project folder name
+            if (!projKey && w.title) {
+                for (const folder of projects) {
+                    if (w.title === folder || w.title.startsWith(folder + ' —') || w.title.startsWith(folder + ' -') || w.title.includes('/' + folder + '/')) {
+                        projKey = folder;
+                        break;
+                    }
+                }
+            }
+            const bucket = projKey || 'ungrouped';
+            if (!projectsGroupedMap[bucket]) {
+                projectsGroupedMap[bucket] = {
+                    name: bucket,
+                    conversations: [],
+                    lastActivity: null,
+                    messageCount: 0,
+                    hasActiveConversations: false
+                };
+            }
+            projectsGroupedMap[bucket].conversations.push({
+                conversationId: w.conversationId || null,
+                id: w.id || null,
+                title: w.title || w.id,
+                projectName: projKey || pName,
+                port: w.port || null,
+                url: w.url || null,
+                isConversation: w.isConversation || false
+            });
+            projectsGroupedMap[bucket].hasActiveConversations = true;
+            // Update lastActivity if this window's activity is newer
+            const wKey = w.projectName || w.title;
+            const wActivity = projectActivity[wKey] || null;
+            if (wActivity) {
+                if (!projectsGroupedMap[bucket].lastActivity || new Date(wActivity) > new Date(projectsGroupedMap[bucket].lastActivity)) {
+                    projectsGroupedMap[bucket].lastActivity = wActivity;
+                }
+            }
+        }
+        // Sort: active-conversation projects first (newest activity on top), inactive at bottom
+        const projectsGrouped = Object.values(projectsGroupedMap).sort((a, b) => {
+            if (a.hasActiveConversations !== b.hasActiveConversations) {
+                return a.hasActiveConversations ? -1 : 1;
+            }
+            const tA = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+            const tB = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+            return tB - tA;
+        });
+
+        res.json({ ok: true, projectsGrouped, projects, activeWindows: dedupedWindows, activity: projectActivity, selectedProject: STATE.targetProject });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
     }
