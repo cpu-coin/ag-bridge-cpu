@@ -786,81 +786,36 @@
       }
     }
 
+    // --- Conversation state ---
+    let selectedConversationId = null;
+    let projectsData = null;
+
     async function fetchProjects() {
       const data = await api('/projects');
+      if (!data) return;
+      projectsData = data;
       const grid = document.getElementById('projects-grid');
       const selector = document.getElementById('chat-project-selector');
-      
-      // Normalize selectedProject to a plain string that matches option values
-      let currentSelectionTitle = 'global';
-      if (data && data.selectedProject && data.selectedProject !== 'global') {
-          if (typeof data.selectedProject === 'string') {
-              currentSelectionTitle = data.selectedProject;
-          } else if (data.selectedProject.projectName) {
-              currentSelectionTitle = data.selectedProject.projectName;
-          } else if (data.selectedProject.title) {
-              currentSelectionTitle = data.selectedProject.title.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
-          } else if (data.selectedProject.id) {
-              currentSelectionTitle = data.selectedProject.id;
-          }
-      }
 
-      if (data) {
-        // Collect and register all known projects first to ensure clean alphabetized color assignments without overlap
-        if (data.activeWindows) {
-            data.activeWindows.forEach(w => {
-                const projName = w.projectName || w.title;
-                if (projName) registerProject(projName);
-            });
-        }
-        if (data.projects) {
-            data.projects.forEach(p => {
-                if (p) registerProject(p);
-            });
-        }
+      // Register all known projects for color assignments
+      if (data.activeWindows) data.activeWindows.forEach(function(w) { if (w.projectName || w.title) registerProject(w.projectName || w.title); });
+      if (data.projects) data.projects.forEach(function(p) { if (p) registerProject(p); });
 
-        let optionsHtml = '<option value="global" style="color: black;">Global Scope</option>';
-        const addedValues = new Set(['global']);
-        if (data.activeWindows) {
-            data.activeWindows.forEach(w => {
-                const projName = w.projectName || w.title;
-                if (!addedValues.has(projName)) {
-                    addedValues.add(projName);
-                    const optColor = getProjectColor(projName);
-                    optionsHtml += `<option value="${escapeHtml(projName)}" style="color: ${optColor}; font-weight: 600;">🟢 ${escapeHtml(projName)}</option>`;
-                }
-            });
-        }
-        if (data.projects) {
-            data.projects.forEach(p => {
-                if (!addedValues.has(p)) {
-                    addedValues.add(p);
-                    const optColor = getProjectColor(p);
-                    optionsHtml += `<option value="${escapeHtml(p)}" style="color: ${optColor}; font-weight: 600;">📁 ${escapeHtml(p)}</option>`;
-                }
-            });
-        }
-        if (selector) {
       // Normalize selectedProject
-      let selectedName = '';
+      var selectedName = '';
       if (data.selectedProject) {
-        if (typeof data.selectedProject === 'string') {
-          selectedName = data.selectedProject;
-        } else if (data.selectedProject.projectName) {
-          selectedName = data.selectedProject.projectName;
-        } else if (data.selectedProject.title) {
-          selectedName = data.selectedProject.title.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
-        }
+        if (typeof data.selectedProject === 'string') selectedName = data.selectedProject;
+        else if (data.selectedProject.projectName) selectedName = data.selectedProject.projectName;
+        else if (data.selectedProject.title) selectedName = data.selectedProject.title.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
       }
 
       // Update chat-project-selector with two-level options
       if (selector) {
-        const oldValue = selector.value;
+        var oldValue = selector.value;
         selector.innerHTML = '<option value="global" style="color: black;">Global Scope</option>';
 
-        const grouped = data.projectsGrouped || [];
+        var grouped = data.projectsGrouped || [];
         grouped.forEach(function(proj) {
-          // Add project-level option
           var option = document.createElement('option');
           option.value = proj.name;
           option.text = (proj.hasActiveConversations ? '🟢 ' : '📁 ') + proj.name;
@@ -868,11 +823,10 @@
           if (proj.name === selectedName && !selectedConversationId) option.selected = true;
           selector.appendChild(option);
 
-          // Add conversation-level options (indented)
           if (proj.conversations && proj.conversations.length > 0) {
             proj.conversations.forEach(function(c) {
               var cOpt = document.createElement('option');
-              var cId = c.conversationId || c.id;
+              var cId = c.conversationId || c.id || '';
               cOpt.value = proj.name + '::' + cId;
               cOpt.text = '    💬 ' + (c.title || 'Conversation');
               cOpt.style.color = 'black';
@@ -882,12 +836,14 @@
           }
         });
 
-        // Restore old value if still valid
-        if (oldValue && [...selector.options].find(o => o.value === oldValue)) {
-          selector.value = oldValue;
+        if (oldValue) {
+          var found = false;
+          for (var i = 0; i < selector.options.length; i++) {
+            if (selector.options[i].value === oldValue) { found = true; break; }
+          }
+          if (found) selector.value = oldValue;
         }
 
-        // Theme color
         var activeProj = selector.value.split('::')[0];
         if (activeProj && activeProj !== 'global') {
           var projColor = getProjectColor(activeProj);
@@ -906,17 +862,16 @@
         }
       }
 
-      // Render projects grid with conversation hierarchy
+      // Render projects grid
       if (grid) {
-        var grouped = data.projectsGrouped || [];
-        if (grouped.length === 0 && data.projects) {
-          // Fallback: build from flat list
-          grouped = data.projects.map(function(p) {
-            return { name: p, conversations: [], lastActivity: data.activity && data.activity[p] || null, messageCount: 0, hasActiveConversations: false };
+        var gList = data.projectsGrouped || [];
+        if (gList.length === 0 && data.projects) {
+          gList = data.projects.map(function(p) {
+            return { name: p, conversations: [], lastActivity: (data.activity && data.activity[p]) || null, messageCount: 0, hasActiveConversations: false };
           });
         }
 
-        var html = grouped.map(function(proj) {
+        var html = gList.map(function(proj) {
           var pColor = getProjectColor(proj.name);
           var isActive = proj.hasActiveConversations;
           var isSelectedProj = selectedName === proj.name;
@@ -939,18 +894,17 @@
             ? '<span style="color: ' + pColor + ';">' + convos.length + ' conversation' + (convos.length !== 1 ? 's' : '') + '</span>'
             : '<span>' + (lastActive ? 'Last: ' + lastActive : 'Workspace') + '</span>';
 
-          // Conversation sub-list
           var convoHtml = '';
           if (hasConvos) {
             convoHtml = '<ul class="convo-list' + (isExpanded ? '' : ' collapsed') + '" id="convo-list-' + safeName + '">';
             convos.forEach(function(c) {
               var cId = c.conversationId || c.id || '';
               var cTitle = c.title || 'Conversation';
-              // Trim project name prefix from title if present
-              if (cTitle.startsWith(proj.name + ' — ')) cTitle = cTitle.substring(proj.name.length + 3);
-              if (cTitle.startsWith(proj.name)) cTitle = cTitle.substring(proj.name.length).replace(/^\s*[—–-]\s*/, '') || 'Conversation';
+              if (cTitle.indexOf(proj.name) === 0) {
+                cTitle = cTitle.substring(proj.name.length).replace(/^\s*[—–\-]\s*/, '') || 'Conversation';
+              }
               var isSel = cId === selectedConversationId;
-              var safeCId = cId.replace(/'/g, "\\'");
+              var safeCId = String(cId).replace(/'/g, "\\'");
               convoHtml += '<li class="convo-item' + (isSel ? ' selected' : '') + '" onclick="event.stopPropagation(); selectConversation(\'' + safeName + '\', \'' + safeCId + '\')" style="' + (isSel ? 'border-color: ' + pColor + ';' : '') + '">';
               convoHtml += '<span class="convo-icon">💬</span>';
               convoHtml += '<span class="convo-title">' + escapeHtml(cTitle) + '</span>';
@@ -959,7 +913,6 @@
             convoHtml += '</ul>';
           }
 
-          // Build card
           var result = '<div>';
           result += '<div class="' + cardClass + '" style="' + cardStyle + '" onclick="selectProject(\'' + safeName + '\')">';
           result += iconHtml;
@@ -967,7 +920,6 @@
           result += '<div style="font-weight: 600; font-size: 15px; color: ' + (isActive ? 'white' : 'var(--text-dim)') + ';">' + escapeHtml(proj.name) + '</div>';
           result += '<div style="font-size: 12px; color: var(--text-dim); margin-top: 3px;">' + subtitleHtml + '</div>';
           result += '</div>';
-          // Right side: count badge + chevron + new button
           if (hasConvos) {
             result += '<span class="convo-count">' + convos.length + '</span>';
             result += '<span class="chevron' + (isExpanded ? ' open' : '') + '" id="chevron-' + safeName + '">▶</span>';
@@ -982,7 +934,6 @@
         grid.innerHTML = html || '<div style="padding:20px; text-align:center; color:var(--text-dim);">No projects found.</div>';
       }
     }
-
     async function selectProject(target) {
       let payload = target;
       if (typeof target === 'string') {
