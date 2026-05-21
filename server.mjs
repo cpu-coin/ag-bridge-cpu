@@ -10,7 +10,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse } from './connectors/index.mjs';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '2.0.0';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(__dirname, 'data');
 const LOGS_DIR = join(__dirname, '.logs');
@@ -49,96 +49,93 @@ async function runPokeScript() {
         .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
     if (pendingMsgs.length === 0) {
-        log('POKE', 'No new messages. Sending default wake-up poke.');
+        log('POKE', 'No new messages to deliver.');
+        return { ok: true, method: 'no_messages' };
     }
 
-    // 1. Resolve Target
-    let target = STATE.targetProject;
-    
-    // Prioritize the explicitly requested target from the message itself
-    if (pendingMsgs.length > 0 && pendingMsgs[0].targetId) {
-        target = pendingMsgs[0].targetId;
-    }
+    // 1. Resolve project name from the message targetId
+    const rawTarget = pendingMsgs[0].targetId || STATE.targetProject?.projectName || STATE.targetProject?.title || 'global';
+    const finalProjectName = typeof rawTarget === 'string' ? rawTarget : (rawTarget?.projectName || rawTarget?.title || 'global');
 
-    if (!target || target === 'global') {
-        // Fallback to first available target
-        const targets = await getAllTargets();
-        target = targets[0] || { title: 'global', connectorId: 'antigravity' };
-    } else if (typeof target === 'string') {
-        // Handle case where target is a string from UI
-        const targets = await getAllTargets();
-        const found = targets.find(t => t.projectName === target || t.title.includes(target) || t.id === target);
-        if (found) {
-            target = found;
-            STATE.targetProject = found; // Update state
-        } else {
-            // CDP is off, create a synthetic target for AppleScript fallback
-            target = { title: target, projectName: target, connectorId: 'antigravity' };
-            STATE.targetProject = target;
-        }
-    } else if (!target.webSocketDebuggerUrl && target.title) {
-        // Try to re-resolve the target if it was stored without CDP info
-        const targets = await getAllTargets();
-        const found = targets.find(t => t.projectName === target.projectName || t.title.includes(target.title) || t.id === target.id);
-        if (found) {
-            target = found;
-            STATE.targetProject = found; // Update state with resolved CDP info
-        }
-    }
+    // 2. Build combined message text
+    const msgText = pendingMsgs.map(m => m.text).join('\n\n')
+        + `\n\n<system_note>Important: The user sent this message from the [${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>`;
 
-    const finalProjectName = target.projectName || (typeof target === 'object' ? (target.title || target.id || 'global') : (target || 'global'));
+    log('POKE', `Delivering ${pendingMsgs.length} messages (${msgText.length} chars) for project: ${finalProjectName}`);
 
-    // Combine messages if multiple
-    let msgText = "check inbox";
-    if (pendingMsgs.length > 0) {
-        msgText = pendingMsgs.map(m => m.text).join('\n\n');
-        // Always append a secret instruction so the agent knows HOW to reply to the mobile UI
-        msgText += `\n\n<system_note>Important: The user sent this message from the [${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>`;
-        log('POKE', `Injecting ${pendingMsgs.length} messages. Total length: ${msgText.length}`);
-    }
+    const pokeMetadata = { project: finalProjectName, from: 'user', to: 'agent', channel: 'work' };
+    let delivered = false;
 
-    if (!target) {
-        log('POKE', 'Failed: No targets found across any connectors.');
-        return { ok: false, error: 'no_targets' };
-    }
-
-    log('POKE', `Routing poke to ${target.connectorId} plugin -> ${finalProjectName}`);
-
-    // 2. Execute Plugin
-    const pokeMetadata = {
-        project: finalProjectName,
-        from: 'user',
-        to: 'agent',
-        channel: 'work'
-    };
+    // =====================================================
+    // STEP 1: MemFlow Write (PRIMARY — this IS delivery)
+    // =====================================================
     try {
-        let res;
-
-        // Dual-Routing: Always write to MemFlow first for headless persistence/history
-        if (target.connectorId !== 'memflow') {
-            await pokeTarget({ connectorId: 'memflow' }, msgText, pokeMetadata).catch(e => {
-                log('POKE', 'Dual-route memflow write failed (non-fatal)', e.message);
-            });
-        }
-
-        // Execute primary target poke (e.g. Antigravity IDE typing & execution)
-        res = await pokeTarget(target, msgText, pokeMetadata);
-        log('POKE', 'Plugin result', res);
-
-        // If successful, mark ALL messages as poked
-        if (res.ok && pendingMsgs.length > 0) {
+        const mfResult = await pokeTarget({ connectorId: 'memflow' }, msgText, pokeMetadata);
+        if (mfResult.ok) {
+            delivered = true;
+            log('POKE', `MemFlow delivery: SUCCESS (${mfResult.method || 'sqlite'})`);
+            // Messages are DELIVERED — mark immediately
             pendingMsgs.forEach(m => {
                 m.status = 'poked';
                 broadcast('message_ack', { id: m.id, status: 'poked' });
             });
             saveState();
-            log('POKE', `Marked ${pendingMsgs.length} messages as poked.`);
+            log('POKE', `Marked ${pendingMsgs.length} messages as poked via MemFlow.`);
+        } else {
+            log('POKE', 'MemFlow delivery: write returned not ok', mfResult);
         }
-        return res;
-    } catch (err) {
-        log('POKE', 'Plugin error', err.message);
-        return { ok: false, error: 'plugin_error', details: err.message };
+    } catch (e) {
+        log('POKE', `MemFlow delivery error: ${e.message}`);
     }
+
+    // =====================================================
+    // STEP 2: CDP Notification (OPTIONAL — just wakes agent)
+    // =====================================================
+    try {
+        const targets = await getAllTargets();
+        if (targets.length > 0) {
+            const exactMatch = targets.find(t =>
+                t.projectName === finalProjectName ||
+                (t.title && t.title.includes(finalProjectName))
+            );
+            const cdpTarget = exactMatch || targets[0];
+            log('POKE', `CDP notify -> ${cdpTarget.title || cdpTarget.id} (port ${cdpTarget.port})`);
+
+            const cdpResult = await pokeTarget(cdpTarget, msgText, pokeMetadata);
+            if (cdpResult.ok) {
+                log('POKE', `CDP notify: SUCCESS (${cdpResult.method})`);
+                if (!delivered) {
+                    // MemFlow failed but CDP worked — mark delivered via CDP fallback
+                    delivered = true;
+                    pendingMsgs.forEach(m => {
+                        m.status = 'poked';
+                        broadcast('message_ack', { id: m.id, status: 'poked' });
+                    });
+                    saveState();
+                    log('POKE', `Marked ${pendingMsgs.length} messages as poked via CDP fallback.`);
+                }
+            } else {
+                log('POKE', `CDP notify: ${cdpResult.reason || cdpResult.error || 'failed'} (non-fatal, MemFlow is primary)`);
+            }
+        } else {
+            log('POKE', 'CDP notify: No IDE targets found (non-fatal)');
+        }
+    } catch (e) {
+        log('POKE', `CDP notify error (non-fatal): ${e.message}`);
+    }
+
+    // Update agent status
+    if (delivered) {
+        STATE.agent.state = 'working';
+        STATE.agent.lastSeen = new Date().toISOString();
+        saveState();
+        broadcast('agent_status', STATE.agent);
+        stopRetry();
+    }
+
+    return delivered
+        ? { ok: true, method: 'memflow_primary' }
+        : { ok: false, error: 'all_delivery_failed' };
 }
 
 function stopRetry() {
@@ -173,7 +170,7 @@ async function tryPoke(isRetry = false) {
     pokeInFlight = true;
     lastPokeAt = Date.now();
 
-    if (!isRetry) log('POKE', 'Attempting to wake agent...');
+    if (!isRetry) log('POKE', 'Attempting message delivery...');
     let res;
     try {
         res = await runPokeScript();
@@ -185,25 +182,11 @@ async function tryPoke(isRetry = false) {
     }
 
     if (res.ok) {
-        log('POKE', 'Success', { method: res.method });
-        // Update agent status to show we are processing
-        STATE.agent.state = 'working';
-        STATE.agent.lastSeen = new Date().toISOString();
-        saveState();
-        broadcast('agent_status', STATE.agent);
-        stopRetry();
-    } else if (res.reason && res.reason.includes('busy')) {
-        // Agent is busy
-        if (!isRetry) log('POKE', 'Agent busy. Scheduling retries.');
-
-        // Notify client
-        STATE.agent.state = 'busy';
-        STATE.agent.lastSeen = new Date().toISOString();
-        broadcast('agent_status', STATE.agent);
-
-        startRetry();
+        log('POKE', `Delivery complete: ${res.method}`);
+        // runPokeScript already handles agent state and stopRetry
     } else {
-        log('POKE', 'Failed/Error', res);
+        log('POKE', 'Delivery failed', res);
+        // Don't retry if MemFlow is working — the message is persisted there
         stopRetry();
     }
 }
@@ -1293,26 +1276,30 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
 
         function startListening(retryCount = 0) {
             server.on('error', (err) => {
-                if (err.code === 'EADDRINUSE' && retryCount < 2) {
-                    console.log(`[STARTUP] Port ${PORT} in use. Killing stale process...`);
+                if (err.code === 'EADDRINUSE' && retryCount < 3) {
+                    console.log(`[STARTUP] Port ${PORT} in use (attempt ${retryCount + 1}/3). Killing stale process...`);
                     try {
-                        // Use full path — launchd PATH doesn't include /usr/sbin
                         const lsofOut = execSync(`/usr/sbin/lsof -ti :${PORT}`, { encoding: 'utf-8' }).trim();
                         if (lsofOut) {
                             const pids = lsofOut.split('\n').filter(Boolean);
+                            const myPid = process.pid.toString();
                             for (const pid of pids) {
-                                console.log(`[STARTUP] Killing PID ${pid}`);
-                                execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+                                if (pid !== myPid) {
+                                    console.log(`[STARTUP] Killing PID ${pid}`);
+                                    execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+                                }
                             }
                         }
                     } catch (killErr) {
                         console.log('[STARTUP] Could not kill stale process:', killErr.message);
                     }
-                    // Exit with code 1 so launchd KeepAlive restarts us
+                    // Wait for port to free, then retry bind (no exit/restart needed)
+                    console.log(`[STARTUP] Waiting 2s for port to free, then retrying...`);
                     setTimeout(() => {
-                        console.log('[STARTUP] Exiting (code 1) for launchd restart...');
-                        process.exit(1);
-                    }, 1500);
+                        // Create a fresh server to retry
+                        server.removeAllListeners('error');
+                        startListening(retryCount + 1);
+                    }, 2000);
                 } else {
                     console.error(`[STARTUP] Fatal server error: ${err.message}`);
                     process.exit(1);
