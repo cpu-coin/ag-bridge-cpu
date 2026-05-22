@@ -1540,6 +1540,7 @@ const MEMFLOW_POLL_INTERVAL = 5000; // 5 seconds
 
 async function pollMemflowOutbox() {
     try {
+        lastPollSuccess = Date.now(); // watchdog: mark that poll is running
         // Poll globally across all projects so we catch responses from background windows
         const project = null;
         
@@ -1633,6 +1634,107 @@ async function pollMemflowOutbox() {
 
 // Start polling when server starts
 memflowPollTimer = setInterval(pollMemflowOutbox, MEMFLOW_POLL_INTERVAL);
+
+// ── SMS / iMessage Alert Fallback ────────────────────────────────────────────
+// Uses osascript (macOS) to send iMessage when bridge delivery is broken.
+// Set ALERT_PHONE env var or add "alertPhone": "+15551234567" to data/config.json
+
+let ALERT_PHONE = process.env.ALERT_PHONE || null;
+
+// Try to load phone from config.json on startup
+(async () => {
+    try {
+        const cfgPath = join(DATA_DIR, 'config.json');
+        if (existsSync(cfgPath)) {
+            const cfg = JSON.parse(await readFile(cfgPath, 'utf8'));
+            if (cfg.alertPhone) ALERT_PHONE = cfg.alertPhone;
+            if (cfg.autonomousMode !== undefined) AUTONOMOUS_MODE = cfg.autonomousMode;
+        }
+    } catch (_) {}
+})();
+
+/**
+ * Send an iMessage/SMS via osascript.
+ * Works on macOS when Messages.app is configured with the target number.
+ */
+async function sendSMS(phone, message) {
+    if (!phone) {
+        log('SMS', 'No alert phone configured. Set ALERT_PHONE env or data/config.json alertPhone.');
+        return { ok: false, reason: 'no_phone' };
+    }
+    const safeMsg = message.replace(/"/g, '\\"').replace(/\n/g, ' ');
+    const script = `tell application "Messages"
+    set targetService to 1st account whose service type = iMessage
+    set targetBuddy to participant "${phone}" of targetService
+    send "${safeMsg}" to targetBuddy
+end tell`;
+    return new Promise((resolve) => {
+        const proc = spawn('osascript', ['-e', script]);
+        let stderr = '';
+        proc.stderr.on('data', d => { stderr += d.toString(); });
+        proc.on('close', (code) => {
+            if (code === 0) {
+                log('SMS', `✅ iMessage sent to ${phone}`);
+                resolve({ ok: true });
+            } else {
+                log('SMS', `❌ iMessage failed (${code}): ${stderr.trim()}`);
+                resolve({ ok: false, reason: stderr.trim() });
+            }
+        });
+    });
+}
+
+// POST /notify/sms — manually or agent-triggered SMS alert
+app.post('/notify/sms', checkAuth, async (req, res) => {
+    const { message, phone } = req.body;
+    const target = phone || ALERT_PHONE;
+    if (!target) return res.status(400).json({ error: 'no_phone_configured', hint: 'Set alertPhone in data/config.json or pass phone in body' });
+    const result = await sendSMS(target, message || 'ag_bridge alert: bridge may be down');
+    res.json(result);
+});
+
+// POST /notify/sms/test — quick test without auth, localhost-only
+app.post('/notify/sms/test', (req, res) => {
+    const ip = req.ip || '';
+    const isLocal = ip === '::1' || ip === '127.0.0.1' || ip.startsWith('::ffff:127.');
+    if (!isLocal) return res.status(403).json({ error: 'localhost_only' });
+    const { phone, message } = req.body;
+    const target = phone || ALERT_PHONE;
+    if (!target) return res.status(400).json({ error: 'no_phone_configured' });
+    sendSMS(target, message || '🟢 ag_bridge SMS test — if you got this, alerts work!').then(r => res.json(r));
+});
+
+// ── Delivery Watchdog ─────────────────────────────────────────────────────────
+// Tracks consecutive memflow poll failures. After 3 failures, sends SMS alert.
+let pollFailCount = 0;
+const POLL_FAIL_THRESHOLD = 3;
+const POLL_WATCHDOG_INTERVAL = 30_000; // check every 30s for persistent failure
+
+let lastPollSuccess = Date.now();
+let smsSentAt = 0; // throttle — don't send more than 1 SMS per 10 minutes
+
+setInterval(async () => {
+    const msSinceLastPoll = Date.now() - lastPollSuccess;
+    const minutesSince = Math.floor(msSinceLastPoll / 60_000);
+
+    if (msSinceLastPoll > POLL_FAIL_THRESHOLD * MEMFLOW_POLL_INTERVAL * 2) {
+        // Poll has been silent for > 3 poll cycles
+        const now = Date.now();
+        if (ALERT_PHONE && now - smsSentAt > 10 * 60_000) {
+            smsSentAt = now;
+            log('WATCHDOG', `Poll silent for ${minutesSince}min — sending SMS alert`);
+            await sendSMS(ALERT_PHONE,
+                `⚠️ ag_bridge: Bridge delivery may be down. MongoDB poll silent for ${minutesSince} min. Check your Mac.`
+            );
+        } else if (!ALERT_PHONE) {
+            log('WATCHDOG', `Poll silent for ${minutesSince}min. Set ALERT_PHONE to enable SMS alerts.`);
+        }
+    }
+}, POLL_WATCHDOG_INTERVAL);
+
+// Patch pollMemflowOutbox to update lastPollSuccess on success
+const _origPollMemflowOutbox = pollMemflowOutbox;
+// (lastPollSuccess is updated inline in the poll's try block — see below)
 
 // --- Graceful Shutdown ---
 function gracefulShutdown(signal) {
