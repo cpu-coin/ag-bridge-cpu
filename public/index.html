@@ -818,17 +818,20 @@
     
     // --- Fetches ---
     async function fetchMessages() {
-      // 1. Context Sensitive (Chat Tab) — ALWAYS filter by the selected project
-      //    When "global" is selected, only show messages with targetId === 'global'
-      //    When a project is selected, only show that project's messages
-      //    This prevents the confusing "roll-up" of all projects into one view
+      // 1. Chat Tab — filter by selected project, or show all if Global Scope
       const currentProj = document.getElementById('chat-project-selector').value;
-      const filterKey = (!currentProj || currentProj === 'Global Scope') ? 'global' : currentProj;
-      let chatUrl = `/messages/inbox?limit=50&filterByProject=${encodeURIComponent(filterKey)}`;
+      const isGlobal = !currentProj || currentProj === 'Global Scope' || currentProj === 'global';
+
+      // When a specific project is selected, filter to it.
+      // When Global Scope, show ALL messages (no filterByProject).
+      let chatUrl = isGlobal
+        ? '/messages/inbox?limit=50'
+        : `/messages/inbox?limit=50&filterByProject=${encodeURIComponent(currentProj)}`;
+
       const chatData = await api(chatUrl);
       if (chatData && chatData.messages) renderMessages(chatData.messages);
 
-      // 2. Global (Monitor Tab) — shows ALL messages across all projects with labels
+      // 2. Monitor Tab — always shows ALL messages across all projects
       const globalData = await api('/messages/inbox?limit=100');
       if (globalData && globalData.messages) renderMonitor(globalData.messages);
     }
