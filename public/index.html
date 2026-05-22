@@ -297,9 +297,11 @@
 
     .chat-layout-wrapper { display: flex; flex-direction: column; align-items: stretch; }
     .chat-main-area { flex: 1; display: flex; flex-direction: column; }
-    .mini-btn { padding: 6px 12px; font-size: 11px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); color: var(--text-dim); text-align: center; box-shadow: none; transition: all 0.2s; font-family: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
-    .mini-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--primary); color: var(--text); box-shadow: 0 0 8px var(--primary-glow); }
-    .mini-btn:active { transform: translateY(1px); }
+    .round-btn { width: 36px; height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; border-radius: 50%; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); color: var(--text-dim); box-shadow: none; transition: all 0.2s; cursor: pointer; }
+    .round-btn:hover { background: rgba(255,255,255,0.12); border-color: var(--primary); color: var(--text); box-shadow: 0 0 8px var(--primary-glow); transform: scale(1.1); }
+    .round-btn:active { transform: scale(0.95); }
+    .model-select-wrapper { position: relative; display: inline-block; }
+    .model-select-wrapper select { position: absolute; opacity: 0; width: 100%; height: 100%; top: 0; left: 0; cursor: pointer; }
 
     /* Projects Grid */
     .projects-grid {
@@ -459,15 +461,6 @@
                 <option value="global" style="color: black;">Global Scope</option>
               </select>
             </div>
-            <div style="font-size: 13px; color: var(--text); margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(16, 185, 129, 0.3);">
-              <select id="chat-model-selector" onchange="changeModel(this.value)" style="background: transparent; border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-weight: 600; padding: 4px 8px; border-radius: 6px; outline: none; cursor: pointer;">
-                <option value="" disabled selected>Model Select...</option>
-                <option value="Claude 3.5 Sonnet">Claude 3.5 Sonnet</option>
-                <option value="Claude Opus">Claude Opus</option>
-                <option value="Gemini 1.5 Pro">Gemini 1.5 Pro</option>
-                <option value="Gemini 2.0 Pro">Gemini 2.0 Pro</option>
-              </select>
-            </div>
           </div>
           <button class="secondary" style="width: auto; padding: 10px; border-radius: 8px; height: 100%; display: flex; align-items: center; justify-content: center;" onclick="fetchMessages()" title="Refresh Chat">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.5l-5.8 5.8"></path></svg>
@@ -488,16 +481,26 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
               </button>
             </div>
-            <!-- Condensed Quick Actions -->
-            <div id="quick-actions-container" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
-              <button class="mini-btn" onclick="sendQuick('Approve')">👍 Approve</button>
-              <button class="mini-btn" onclick="sendQuick('Reject')">👎 Reject</button>
-              <button class="mini-btn" onclick="sendQuick('CONTINUE')">Continue</button>
-              <button class="mini-btn" onclick="sendQuick('ABORT')">Abort</button>
-              <button class="mini-btn" onclick="sendRetry()">Retry Last</button>
-              <button class="mini-btn" onclick="sendQuick('STOP')">Stop</button>
-              <button class="mini-btn" onclick="sendQuick('STATUS')">Status</button>
-              <button class="mini-btn" onclick="sendQuick('Please summarize the last action/result')">Summary</button>
+            <!-- Condensed Quick Actions (Round Buttons) -->
+            <div id="quick-actions-container" style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: center; padding: 4px;">
+              <div class="model-select-wrapper" title="Select Model">
+                <button class="round-btn">🧠</button>
+                <select id="chat-model-selector" onchange="changeModel(this.value)">
+                  <option value="" disabled selected>Model Select...</option>
+                  <option value="Claude 3.5 Sonnet">Claude 3.5 Sonnet</option>
+                  <option value="Claude Opus">Claude Opus</option>
+                  <option value="Gemini 1.5 Pro">Gemini 1.5 Pro</option>
+                  <option value="Gemini 2.0 Pro">Gemini 2.0 Pro</option>
+                </select>
+              </div>
+              <button class="round-btn" onclick="sendQuick('Approve')" title="Approve">👍</button>
+              <button class="round-btn" onclick="sendQuick('Reject')" title="Reject">👎</button>
+              <button class="round-btn" onclick="sendQuick('CONTINUE')" title="Continue">▶️</button>
+              <button class="round-btn" onclick="sendQuick('ABORT')" title="Abort">🛑</button>
+              <button class="round-btn" onclick="sendRetry()" title="Retry Last">🔄</button>
+              <button class="round-btn" onclick="sendQuick('STOP')" title="Stop Agent">⏸️</button>
+              <button class="round-btn" onclick="sendQuick('STATUS')" title="Get Agent Status">ℹ️</button>
+              <button class="round-btn" onclick="sendQuick('Please summarize the last action/result')" title="Summary">📝</button>
             </div>
           </div>
         </div>
