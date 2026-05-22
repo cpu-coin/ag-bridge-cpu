@@ -1,48 +1,49 @@
 {
-    "version": 2,
-    "globalDeny": [
-        "\\brm\\b",
-        "\\bdel\\b",
-        "\\bformat\\b",
-        "\\bdiskpart\\b",
-        "\\bshutdown\\b",
-        "\\breboot\\b",
-        "\\bchmod\\b",
-        "\\bchown\\b"
-    ],
-    "profiles": {
-        "relaxed": {
-            "description": "Allows almost everything except dangerous globals.",
-            "allow": [
-                ".*"
-            ],
-            "deny": []
-        },
-        "balanced": {
-            "description": "Standard development commands (git, npm, python).",
-            "allow": [
-                "^git (status|diff|log|fetch|pull|push|checkout|switch|commit|restore|add|reset|stash)\\b",
-                "^(npm|pnpm|yarn) (test|run|lint|build|install|ci|audit)\\b",
-                "^pytest\\b",
-                "^python -m (pytest|ruff|mypy)\\b",
-                "^node\\b",
-                "^ls\\b",
-                "^dir\\b",
-                "^cd\\b",
-                "^mkdir\\b",
-                "^echo\\b"
-            ],
-            "deny": []
-        },
-        "paranoid": {
-            "description": "Read-only / Safe ops only.",
-            "allow": [
-                "^git (status|diff|log)\\b",
-                "^npm (test|audit)\\b",
-                "^ls\\b",
-                "^echo\\b"
-            ],
-            "deny": []
-        }
+  "version": 2,
+  "globalDeny": [
+    "\\brm\\b",
+    "\\bdel\\b",
+    "\\bformat\\b",
+    "\\bdiskpart\\b",
+    "\\bshutdown\\b",
+    "\\breboot\\b",
+    "\\bchmod\\b",
+    "\\bchown\\b"
+  ],
+  "profiles": {
+    "relaxed": {
+      "description": "Allows almost everything except dangerous globals.",
+      "allow": [
+        ".*"
+      ],
+      "deny": []
+    },
+    "balanced": {
+      "description": "Standard development commands (git, npm, python).",
+      "allow": [
+        "^git (status|diff|log|fetch|pull|push|checkout|switch|commit|restore|add|reset|stash)\\b",
+        "^(npm|pnpm|yarn) (test|run|lint|build|install|ci|audit)\\b",
+        "^pytest\\b",
+        "^python -m (pytest|ruff|mypy)\\b",
+        "^node\\b",
+        "^ls\\b",
+        "^dir\\b",
+        "^cd\\b",
+        "^mkdir\\b",
+        "^echo\\b",
+        "^git restore tasks/lessons\\.md && git add \\.env\\.maitrixfb src/version\\.json tasks/todo\\.md && git commit -m \"Commit changes\" && git push origin pre-email-base && git checkout main && git merge pre-email-base && git push origin main && git checkout pre-email-base$"
+      ],
+      "deny": []
+    },
+    "paranoid": {
+      "description": "Read-only / Safe ops only.",
+      "allow": [
+        "^git (status|diff|log)\\b",
+        "^npm (test|audit)\\b",
+        "^ls\\b",
+        "^echo\\b"
+      ],
+      "deny": []
     }
+  }
 }
