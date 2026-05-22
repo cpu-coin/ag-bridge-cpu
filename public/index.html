@@ -1294,7 +1294,36 @@
       }
       fetchApprovals();
     }
-    
+
+    async function acceptAll() {
+      const btn = document.getElementById('accept-all-btn');
+      if (btn) { btn.disabled = true; btn.innerText = 'Approving...'; }
+      await api('/approvals/accept-all', 'POST', {});
+      fetchApprovals();
+      fetchStatus();
+      if (btn) { btn.disabled = false; btn.innerText = '✓ Accept All'; }
+    }
+
+    function applyAutonomousUI(enabled) {
+      document.body.classList.toggle('autonomous-active', enabled);
+      const banner = document.getElementById('autonomous-banner');
+      const desc   = document.getElementById('autonomous-desc');
+      const icon   = document.getElementById('autonomous-icon');
+      if (banner) banner.style.borderColor = enabled
+        ? 'rgba(245,158,11,0.7)'
+        : 'rgba(245,158,11,0.35)';
+      if (desc) desc.innerText = enabled
+        ? '⚡ ACTIVE — All approvals are auto-approved'
+        : 'Auto-approve all agent requests — no interruptions';
+      if (icon) icon.innerText = enabled ? '🔥' : '⚡';
+    }
+
+    async function toggleAutonomous(enabled) {
+      applyAutonomousUI(enabled);
+      await api('/config/autonomous', 'POST', { enabled });
+    }
+
+
     async function sendChat() {
       const input = document.getElementById('chat-input');
       const text = input.value.trim();

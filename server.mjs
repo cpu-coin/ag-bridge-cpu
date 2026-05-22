@@ -60,8 +60,24 @@ async function runPokeScript() {
 
     // 2. Build combined message text
     const msgText = pendingMsgs.map(m => m.text).join('\n\n')
-        + `\n\n<system_note>Important: The user sent this message from the [${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status with body {"state": "working", "task": "brief description of what you are doing", "project": "${finalProjectName}"}. Do not just reply in the local chat panel.</system_note>`;
+        + `
 
+<system_note>You are working in the [${finalProjectName}] workspace. Restrict ALL actions to this project only.
+
+COMMUNICATION RULES (follow these exactly):
+1. Send responses via the mobile_respond MCP tool — do NOT reply in the local chat panel.
+2. Send status updates via: POST http://127.0.0.1:8787/agent/status  body: {"state":"working","task":"what you are doing right now","project":"${finalProjectName}"}
+3. When idle or done: POST http://127.0.0.1:8787/agent/status  body: {"state":"idle","task":"","project":"${finalProjectName}"}
+
+APPROVAL RULES (IMPORTANT — follow for every tool use that requires user permission):
+- Before running any shell command, writing files, or making network requests that you would normally ask the user to approve, FIRST call:
+  POST http://127.0.0.1:8787/agent/request-approval
+  body: {"kind":"command","details":{"cmd":"<the exact command>","risk":"low|medium|high"},"project":"${finalProjectName}"}
+- The response will have {"ok":true,"approval":{"id":"appr_...","status":"approved"|"pending"}}
+- If status is "pending", poll every 3 seconds: GET http://127.0.0.1:8787/agent/approval-status/<id>
+- ONLY proceed when status is "approved". If "denied", stop and tell the user via mobile_respond.
+- If autonomous mode is active, status will immediately be "approved" and you can proceed without polling.
+</system_note>`;
 
     log('POKE', `Delivering ${pendingMsgs.length} messages (${msgText.length} chars) for project: ${finalProjectName}`);
 
@@ -1249,6 +1265,94 @@ app.post('/checkpoint', checkAuth, (req, res) => {
 
     broadcast('checkpoint_new', cp);
     res.json({ ok: true, checkpoint: cp });
+});
+
+// --- Agent-facing routes (no auth required — localhost only, called by IDE agent) ---
+
+// POST /agent/request-approval
+// The IDE agent calls this instead of the IDE's built-in permission dialog.
+// Returns immediately with { approval } — status is 'approved' if autonomous mode is on,
+// otherwise 'pending' and the agent should poll /agent/approval-status/:id.
+app.post('/agent/request-approval', (req, res) => {
+    const { kind, details, risk, project, clientTag } = req.body;
+
+    // Policy check
+    if (kind === 'command' || !kind) {
+        const cmd = details?.cmd;
+        if (cmd) {
+            const check = checkPolicy(cmd);
+            if (!check.allowed) {
+                console.warn(`[POLICY] Blocked command: "${cmd}"`);
+                return res.status(403).json({ error: check.error, blocked: true });
+            }
+        }
+    }
+
+    const targetProject = project
+        || (STATE.targetProject && (STATE.targetProject.projectName || STATE.targetProject.title))
+        || 'global';
+
+    const newApproval = {
+        id: `appr_${crypto.randomBytes(4).toString('hex')}`,
+        createdAt: new Date().toISOString(),
+        kind: kind || 'command',
+        details: details || {},
+        status: 'pending',
+        decidedAt: null,
+        meta: { risk: risk || 'medium', clientTag: clientTag || targetProject, source: 'agent' }
+    };
+
+    // Autonomous mode — skip the queue
+    if (AUTONOMOUS_MODE) {
+        newApproval.status = 'approved';
+        newApproval.decidedAt = new Date().toISOString();
+        newApproval.autoApproved = true;
+        STATE.approvals.push(newApproval);
+        saveApprovals();
+        console.log(`[AUTONOMOUS] Agent request auto-approved: ${newApproval.id} (${details?.cmd || kind})`);
+        broadcast('approval_decided', { id: newApproval.id, status: 'approved', auto: true });
+        return res.json({ ok: true, approval: newApproval });
+    }
+
+    STATE.approvals.push(newApproval);
+    saveApprovals();
+
+    // Surface as a message in the chat thread
+    const cmdLabel = details?.cmd || kind || 'action';
+    const msgText = `⚠️ Approval Required [${targetProject}]: \`${cmdLabel}\``;
+    const msg = {
+        id: 'msg_appr_' + newApproval.id,
+        createdAt: newApproval.createdAt,
+        from: 'agent', to: 'user',
+        channel: 'approval',
+        text: msgText,
+        status: 'new',
+        targetId: targetProject,
+        approvalId: newApproval.id
+    };
+    STATE.messages.push(msg);
+    if (STATE.messages.length > 200) STATE.messages.shift();
+    saveState();
+
+    console.log(`[APPROVAL] Agent requested: ${newApproval.id} kind=${kind} cmd=${details?.cmd || '-'}`);
+    broadcast('approval_requested', newApproval);
+    broadcast('message_new', msg);
+
+    res.json({ ok: true, approval: newApproval });
+});
+
+// GET /agent/approval-status/:id
+// The agent polls this until status changes from 'pending' to 'approved' or 'denied'.
+app.get('/agent/approval-status/:id', (req, res) => {
+    const approval = STATE.approvals.find(a => a.id === req.params.id);
+    if (!approval) return res.status(404).json({ error: 'not_found' });
+    res.json({
+        ok: true,
+        id: approval.id,
+        status: approval.status,
+        decidedAt: approval.decidedAt,
+        proceed: approval.status === 'approved'
+    });
 });
 
 // --- Legacy v0.2 Routes ---
