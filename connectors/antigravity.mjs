@@ -559,11 +559,12 @@ export async function poke(target, messageContent) {
         const freshTargets = await getTargets();
         if (freshTargets.length > 0) {
             // Match the target by project folder name, window title, or url
+            const norm = (s) => (s || '').toLowerCase().replace(/[-_]/g, '-');
             const match = freshTargets.find(t => 
-                (target.projectName && t.projectName === target.projectName) || 
-                (target.title && t.title === target.title) || 
+                (target.projectName && norm(t.projectName) === norm(target.projectName)) || 
+                (target.title && norm(t.title) === norm(target.title)) || 
                 (target.url && t.url === target.url)
-            ) || freshTargets[0]; // fallback to the first active target
+            ) || null; // NO fallback to [0] — wrong project is worse than no delivery
 
             if (match && match.webSocketDebuggerUrl !== target.webSocketDebuggerUrl) {
                 console.log(`[POKE RECOVERY] Recovered active target on port ${match.port}. Retrying connection...`);

@@ -131,28 +131,36 @@ APPROVAL RULES (IMPORTANT — follow for every tool use that requires user permi
     try {
         const targets = await getAllTargets();
         if (targets.length > 0) {
-            const exactMatch = targets.find(t =>
-                t.projectName === finalProjectName ||
-                (t.title && t.title.includes(finalProjectName))
-            );
-            const cdpTarget = exactMatch || targets[0];
-            log('POKE', `CDP notify -> ${cdpTarget.title || cdpTarget.id} (port ${cdpTarget.port})`);
+            // Normalize project name for matching: treat hyphens == underscores
+            // The process-scan slug decoder produces underscores; folder names use hyphens.
+            const norm = (s) => (s || '').toLowerCase().replace(/[-_]/g, '-');
+            const normProject = norm(finalProjectName);
 
-            const cdpResult = await pokeTarget(cdpTarget, msgText, pokeMetadata);
-            if (cdpResult.ok) {
-                log('POKE', `CDP notify: SUCCESS (${cdpResult.method})`);
-                if (!delivered) {
-                    // MemFlow failed but CDP worked — mark delivered via CDP fallback
-                    delivered = true;
-                    pendingMsgs.forEach(m => {
-                        m.status = 'poked';
-                        broadcast('message_ack', { id: m.id, status: 'poked' });
-                    });
-                    saveState();
-                    log('POKE', `Marked ${pendingMsgs.length} messages as poked via CDP fallback.`);
-                }
+            const exactMatch = targets.find(t =>
+                norm(t.projectName) === normProject ||
+                (t.title && norm(t.title).includes(normProject))
+            );
+
+            if (!exactMatch) {
+                // No matching window found — do NOT fall back to targets[0] (wrong project)
+                log('POKE', `CDP notify: no window found for project '${finalProjectName}' — skipping to avoid cross-project delivery`);
             } else {
-                log('POKE', `CDP notify: ${cdpResult.reason || cdpResult.error || 'failed'} (non-fatal, MemFlow is primary)`);
+                log('POKE', `CDP notify -> ${exactMatch.title || exactMatch.id} (port ${exactMatch.port})`);
+                const cdpResult = await pokeTarget(exactMatch, msgText, pokeMetadata);
+                if (cdpResult.ok) {
+                    log('POKE', `CDP notify: SUCCESS (${cdpResult.method})`);
+                    if (!delivered) {
+                        delivered = true;
+                        pendingMsgs.forEach(m => {
+                            m.status = 'poked';
+                            broadcast('message_ack', { id: m.id, status: 'poked' });
+                        });
+                        saveState();
+                        log('POKE', `Marked ${pendingMsgs.length} messages as poked via CDP fallback.`);
+                    }
+                } else {
+                    log('POKE', `CDP notify: ${cdpResult.reason || cdpResult.error || 'failed'} (non-fatal, MemFlow is primary)`);
+                }
             }
         } else {
             log('POKE', 'CDP notify: No IDE targets found (non-fatal)');
