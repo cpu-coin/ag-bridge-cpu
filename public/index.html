@@ -848,9 +848,20 @@
       if (globalData && globalData.messages) renderMonitor(globalData.messages);
     }
 
+    // Smart scroll: only auto-scroll if user is already within 80px of the bottom.
+    // Polling, incoming messages, and status updates never interrupt reading position.
+    function isNearBottom(el, threshold = 80) {
+      if (!el) return true;
+      return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+    }
+    function smartScroll(el) {
+      if (isNearBottom(el)) el.scrollTop = el.scrollHeight;
+    }
+
     function renderMonitor(msgs) {
       const thread = document.getElementById('monitor-thread');
       if (!thread) return;
+      const wasNearBottom = isNearBottom(thread);
       if (msgs.length === 0) {
         thread.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No communications yet.</div>';
         return;
@@ -862,7 +873,7 @@
         var b64Text = btoa(unescape(encodeURIComponent(m.text)));
         return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="margin-right: auto; margin-left: 0; max-width: 100%; border-bottom-left-radius: 4px; border-bottom-right-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);">' +
           '<div class="msg-meta">' +
-            '<span style="color: ' + pColor + '; font-weight: bold; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(m.targetId) + '\')">' + label + '</span>' +
+            '<span style="color: ' + pColor + '; font-weight: bold; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(m.targetId) + '\')">>' + label + '</span>' +
             '<span>' + time + '</span>' +
           '</div>' +
           '<div style="position: relative;">' +
@@ -873,7 +884,7 @@
           '</div>' +
         '</div>';
       }).join('');
-      thread.scrollTop = thread.scrollHeight;
+      if (wasNearBottom) thread.scrollTop = thread.scrollHeight;
     }
 
     async function fetchAgentStatus() {
@@ -1295,6 +1306,7 @@
 
     function renderMessages(msgs) {
       const thread = document.getElementById('chat-thread');
+      const wasNearBottom = isNearBottom(thread);
       if (msgs.length === 0) {
         thread.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:40px 20px;">No messages yet.</div>';
         return;
@@ -1327,7 +1339,7 @@
           renderApprovalButtons(m) +
         '</div>';
       }).join('');
-      thread.scrollTop = thread.scrollHeight;
+      if (wasNearBottom) thread.scrollTop = thread.scrollHeight;
     }
 
     async function handleApprovalAction(id, action, always = false) {
