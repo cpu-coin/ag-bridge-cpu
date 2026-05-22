@@ -1347,23 +1347,35 @@
       }
       
       const senderAlias = localStorage.getItem('senderAlias') || 'Mobile';
+      localStorage.setItem('lastSentMessage', text); // save for Retry Last
       
       await api('/messages/send', 'POST', { to: 'agent', channel: 'work', text, project: projectStr, conversationId: convoId, senderAlias });
       input.value = '';
     }
+
 
     function saveSenderAlias(val) {
         localStorage.setItem('senderAlias', val || 'Mobile');
     }
     function sendQuick(text) { document.getElementById('chat-input').value = text; sendChat(); }
     function sendRetry() {
+        // First try the visible chat thread
         const msgs = document.querySelectorAll('#chat-thread .msg.user div:last-child');
         if (msgs.length > 0) {
-            const lastMsg = msgs[msgs.length - 1].innerText;
-            document.getElementById('chat-input').value = lastMsg;
+            const lastMsg = msgs[msgs.length - 1].innerText.trim();
+            if (lastMsg) {
+                document.getElementById('chat-input').value = lastMsg;
+                sendChat();
+                return;
+            }
+        }
+        // Fall back to the last message saved in localStorage
+        const saved = localStorage.getItem('lastSentMessage');
+        if (saved) {
+            document.getElementById('chat-input').value = saved;
             sendChat();
         } else {
-            alert('No previous message found to retry.');
+            alert('No previous message found. Send a message first.');
         }
     }
     async function restartServer() {
