@@ -1,5 +1,5 @@
 {
-  "name": "ag-bridge",
+  "name": "ag-bridge-cpu",
   "version": "1.0.0",
   "description": "LAN-only companion app for agent supervision",
   "main": "server.mjs",
