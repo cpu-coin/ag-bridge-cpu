@@ -54,11 +54,17 @@ AG Bridge supports two distinct ways to route Agent responses back to your mobil
 
 2. **Chrome DevTools Protocol (Fallback)**
    If you rely on the legacy `antigravity.mjs` connector, AG Bridge uses an **AppleScript fallback** to type your mobile messages into the correct Antigravity Desktop window. While this guarantees your messages are delivered reliably, **AppleScript is blind**—it cannot read the AI's replies back out of the chat window.
-   To get legacy two-way sync, you must launch the Antigravity Desktop App from your terminal with the Chrome DevTools Protocol (CDP) port open:
+   To get legacy two-way sync, you must launch the Antigravity Desktop App (or Antigravity IDE) with the Chrome DevTools Protocol (CDP) port open. This developer mode is ONLY required if you are relying on the legacy AppleScript fallback mode (it is not needed for the MemFlow MCP integration).
+
+   To launch in dev mode, you can use the terminal:
    ```bash
-   /Applications/Antigravity.app/Contents/MacOS/Electron --remote-debugging-port=9000
+   # For Antigravity
+   open -a Antigravity --args --remote-debugging-port=9000
+   
+   # For Antigravity IDE
+   open -a "Antigravity IDE" --args --remote-debugging-port=9000
    ```
-   *(You can use ports 9000, 9001, 9002, or 9003. The bridge scans these automatically to read the chat history DOM).*
+   *(You can also use ports 9000, 9001, 9002, or 9003. The bridge scans these automatically to read the chat history DOM). You can create an Automator/AppleScript app (e.g., `Antigravity-Debug.app` and `Antigravity IDE-Debug.app`) to run these commands for convenience.*
 
 ## Remote Access (Built-In) ☁️
 AG Bridge is designed with **first-class Tailscale integration** for secure remote access:
