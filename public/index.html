@@ -20,7 +20,48 @@
       --success: #10b981;
       --danger: #f43f5e;
       --warning: #f59e0b;
+      --autonomous-glow: rgba(245, 158, 11, 0.25);
     }
+
+    /* Autonomous mode active: orange ambient pulse on body */
+    body.autonomous-active::before {
+      background: radial-gradient(circle, var(--autonomous-glow) 0%, transparent 60%) !important;
+      animation: autonomousPulse 3s ease-in-out infinite;
+    }
+    @keyframes autonomousPulse {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+
+    /* Toggle switch for autonomous mode */
+    .auto-toggle { position: relative; display: inline-block; width: 52px; height: 28px; cursor: pointer; flex-shrink: 0; }
+    .auto-toggle input { opacity: 0; width: 0; height: 0; }
+    .auto-slider {
+      position: absolute; inset: 0;
+      background: rgba(255,255,255,0.1);
+      border-radius: 99px;
+      border: 1px solid rgba(255,255,255,0.15);
+      transition: background 0.25s, box-shadow 0.25s;
+    }
+    .auto-slider::before {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      left: 3px; top: 3px;
+      background: white;
+      border-radius: 50%;
+      transition: transform 0.25s, background 0.25s;
+    }
+    .auto-toggle input:checked + .auto-slider {
+      background: rgba(245, 158, 11, 0.5);
+      border-color: rgba(245, 158, 11, 0.7);
+      box-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+    }
+    .auto-toggle input:checked + .auto-slider::before {
+      transform: translateX(24px);
+      background: #f59e0b;
+    }
+
 
     * { box-sizing: border-box; }
 
@@ -453,16 +494,40 @@
 
     <!-- Tab 3: Queue -->
     <div id="tab-queue" class="tab-content">
-      <div class="glass-card">
+      <!-- Autonomous Mode Banner -->
+      <div id="autonomous-banner" class="glass-card" style="border-color: rgba(245, 158, 11, 0.35); margin-bottom: 0;">
+        <div class="flex justify-between items-center">
+          <div>
+            <div style="font-weight: 700; font-size: 15px; display: flex; align-items: center; gap: 8px;">
+              <span id="autonomous-icon" style="font-size: 18px;">⚡</span>
+              Autonomous Mode
+            </div>
+            <div style="font-size: 12px; color: var(--text-dim); margin-top: 3px;" id="autonomous-desc">
+              Auto-approve all agent requests — no interruptions
+            </div>
+          </div>
+          <label class="auto-toggle" title="Toggle autonomous mode">
+            <input type="checkbox" id="autonomous-toggle" onchange="toggleAutonomous(this.checked)">
+            <span class="auto-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Approval Queue -->
+      <div class="glass-card" style="margin-top: 12px;">
         <div class="flex justify-between items-center mb-4">
-          <h3>Approval Queue</h3>
-          <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="requestRealApproval()">+ Mock Req</button>
+          <h3>Pending <span id="pending-badge-queue" style="font-size:12px; background:rgba(244,63,94,0.2); color:var(--danger); border-radius:99px; padding:1px 8px;"></span></h3>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button id="accept-all-btn" class="success" style="width:auto; padding:7px 14px; font-size:13px; font-weight:700; display:none;" onclick="acceptAll()">✓ Accept All</button>
+            <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="requestRealApproval()">+ Mock</button>
+          </div>
         </div>
         <div id="approvals-list">
           <p style="text-align:center; color:var(--text-dim); padding: 20px;">No pending approvals.</p>
         </div>
       </div>
     </div>
+
 
     <!-- Tab 4: Settings -->
     <div id="tab-settings" class="tab-content">
@@ -813,6 +878,13 @@
             prodIndicator.style.display = 'none';
           }
         }
+
+        // Sync autonomous mode toggle from server state
+        const autoToggle = document.getElementById('autonomous-toggle');
+        if (autoToggle && typeof data.agent.autonomousMode === 'boolean') {
+          autoToggle.checked = data.agent.autonomousMode;
+          applyAutonomousUI(data.agent.autonomousMode);
+        }
         
         const taskBlock = document.getElementById('agent-active-task');
         const taskLabel = document.getElementById('agent-task-label') || taskBlock.querySelector('strong');
@@ -1098,6 +1170,12 @@
       if (data && data.approvals) {
         const container = document.getElementById('approvals-list');
         const pendingCount = data.approvals.filter(a => a.status === 'pending').length;
+
+        // Update Accept All button visibility
+        const acceptAllBtn = document.getElementById('accept-all-btn');
+        const queueBadge = document.getElementById('pending-badge-queue');
+        if (acceptAllBtn) acceptAllBtn.style.display = pendingCount > 0 ? 'block' : 'none';
+        if (queueBadge) queueBadge.textContent = pendingCount > 0 ? pendingCount : '';
 
         // Update nav badge
         var badge = document.getElementById('pending-badge');

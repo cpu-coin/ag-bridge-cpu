@@ -228,6 +228,11 @@ let STATE = {
 let PAIRING_CODE = generateCode();
 let TOKENS = new Set(); // Loaded from STATE.tokens
 
+// Autonomous Mode — session-scoped only, resets to false on every server restart.
+// When true, incoming approval requests are auto-approved without waiting for
+// a human decision. The Maitrix panel toggle writes this via POST /config/autonomous.
+let AUTONOMOUS_MODE = false;
+
 let cachedProductType = null; // null = not yet detected
 
 async function updateCachedProductType() {
@@ -600,7 +605,12 @@ app.post('/pair/claim', (req, res) => {
 
 // Protected
 app.get('/config', requireAuth, (req, res) => {
-    res.json({ ok: true, strictMode: STATE.strictMode, ts: new Date().toISOString() });
+    res.json({
+        ok: true,
+        strictMode: STATE.strictMode,
+        autonomousMode: AUTONOMOUS_MODE,
+        ts: new Date().toISOString()
+    });
 });
 
 app.post('/config/strict-mode', requireAuth, (req, res) => {
@@ -613,6 +623,47 @@ app.post('/config/strict-mode', requireAuth, (req, res) => {
     console.log(`[CONFIG] Strict Mode set to ${strictMode}`);
     broadcast('config_changed', { strictMode });
     res.json({ ok: true, strictMode });
+});
+
+// Autonomous Mode toggle — session-scoped, never written to disk.
+// Used by the Maitrix mobile panel to let the agent run without interruption.
+app.post('/config/autonomous', requireAuth, (req, res) => {
+    const { enabled } = req.body;
+    if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: 'invalid_input', hint: '{ enabled: true|false }' });
+    }
+    AUTONOMOUS_MODE = enabled;
+    console.log(`[CONFIG] Autonomous Mode ${enabled ? 'ENABLED' : 'DISABLED'}`);
+    broadcast('config_changed', { autonomousMode: AUTONOMOUS_MODE });
+    res.json({ ok: true, autonomousMode: AUTONOMOUS_MODE });
+});
+
+// Accept All — bulk-approve every pending approval in a single tap.
+// Primary action for the Maitrix mobile panel.
+app.post('/approvals/accept-all', requireAuth, async (req, res) => {
+    const pending = STATE.approvals.filter(a => a.status === 'pending');
+    if (pending.length === 0) {
+        return res.json({ ok: true, approved: 0, message: 'No pending approvals' });
+    }
+
+    const now = new Date().toISOString();
+    for (const approval of pending) {
+        approval.status = 'approved';
+        approval.decidedAt = now;
+        approval.bulkApproved = true;
+
+        const msg = STATE.messages.find(m => m.approvalId === approval.id);
+        if (msg) msg.approvalStatus = 'approved';
+
+        broadcast('approval_decided', { id: approval.id, status: 'approved', bulk: true });
+        if (msg) broadcast('message_update', msg);
+        console.log(`[APPROVAL] ${approval.id} BULK APPROVED`);
+    }
+
+    saveApprovals();
+    saveState();
+
+    res.json({ ok: true, approved: pending.length });
 });
 
 // Migrated to usage of single /status endpoint below
@@ -880,7 +931,7 @@ app.post('/agent/heartbeat', checkAuth, (req, res) => {
 
 // GET /agent/status
 app.get('/agent/status', checkAuth, (req, res) => {
-    res.json({ ok: true, agent: { ...STATE.agent, product: cachedProductType } });
+    res.json({ ok: true, agent: { ...STATE.agent, product: cachedProductType, autonomousMode: AUTONOMOUS_MODE } });
 });
 
 // GET /projects
@@ -1175,8 +1226,24 @@ app.post('/approvals/request', checkAuth, (req, res) => {
         }
     };
 
+    // ── Autonomous Mode: skip the queue entirely ──────────────────────────────
+    // When AUTONOMOUS_MODE is on the agent must never block waiting for a human
+    // decision. We mark the approval immediately, log it, broadcast the decision,
+    // and return 'approved' — the agent continues without any round-trip wait.
+    if (AUTONOMOUS_MODE) {
+        newApproval.status = 'approved';
+        newApproval.decidedAt = new Date().toISOString();
+        newApproval.autoApproved = true;
+        STATE.approvals.push(newApproval);
+        saveApprovals();
+        console.log(`[AUTONOMOUS] Auto-approved ${newApproval.id} (${kind}: ${details?.cmd || kind})`);
+        broadcast('approval_decided', { id: newApproval.id, status: 'approved', auto: true });
+        return res.json({ ok: true, approval: newApproval, auto: true });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     STATE.approvals.push(newApproval);
-    saveApprovals(); // Changed from saveState()
+    saveApprovals();
 
     // Inject message for the chat thread
     const targetId = req.body.project || STATE.targetProject?.id || STATE.targetProject?.title || (typeof STATE.targetProject === 'string' ? STATE.targetProject : 'global');
