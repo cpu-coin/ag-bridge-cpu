@@ -997,34 +997,35 @@ app.get('/projects', checkAuth, async (req, res) => {
             }
         });
         
-        // Infer active windows from recent activity (last 24h) or current selection
-        const recentProjects = new Set();
-        const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-        
-        if (STATE.targetProject) {
-            if (typeof STATE.targetProject === 'string') recentProjects.add(STATE.targetProject);
-            else if (STATE.targetProject.title) recentProjects.add(STATE.targetProject.title.replace(' - Visual Studio Code', ''));
-        }
-        
-        for (const [proj, timeStr] of Object.entries(projectActivity)) {
-            if (new Date(timeStr).getTime() > oneDayAgo) {
-                recentProjects.add(proj);
-            }
-        }
-        
-        for (const proj of recentProjects) {
-            if (proj && proj !== 'global' && proj !== '.memflow') {
-                const exists = activeWindows.find(w => w.id === proj || w.title === proj || (w.title && w.title.includes(proj)));
-                if (!exists && projects.includes(proj)) {
-                    activeWindows.push({
-                        id: proj,
-                        title: proj,
-                        connectorId: 'antigravity',
-                        type: 'inferred'
-                    });
+        // ── History-inferred projects (fallback only) ─────────────────────────
+        // Only add inferred-from-history entries when the live process scan
+        // returned ZERO results (i.e. Antigravity IDE is not currently running).
+        // When the IDE is running, process_scan results are the authoritative list
+        // and we must NOT pollute it with stale historical entries.
+        const hasLiveProcessScanResults = activeWindows.some(w => w.source === 'process_scan');
+
+        if (!hasLiveProcessScanResults) {
+            for (const [proj, timeStr] of Object.entries(projectActivity)) {
+                if (new Date(timeStr).getTime() > oneDayAgo) {
+                    if (proj && proj !== 'global' && proj !== '.memflow') {
+                        const exists = activeWindows.find(w =>
+                            w.id === proj || w.title === proj || (w.projectName && w.projectName === proj)
+                        );
+                        if (!exists && projects.includes(proj)) {
+                            activeWindows.push({
+                                id: proj,
+                                title: proj,
+                                connectorId: 'antigravity',
+                                productType: cachedProductType || 'ide',
+                                type: 'inferred_offline',
+                                source: 'history',
+                            });
+                        }
+                    }
                 }
             }
         }
+
         
         // Deduplicate activeWindows by projectName (keep the most recently active tab per project)
         const seenProjects = new Map();
