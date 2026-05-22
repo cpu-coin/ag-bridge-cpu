@@ -1825,14 +1825,11 @@ async function pollMemflowOutbox() {
 memflowPollTimer = setInterval(pollMemflowOutbox, MEMFLOW_POLL_INTERVAL);
 
 // ── Delivery Reconciliation Sweeper ──────────────────────────────────────────
-// Runs every 10s. Handles three scenarios:
-//   1. QUEUED too long (status 'new', >15s) → force a poke to write to MongoDB
-//   2. SENT but not delivered (status 'sent', >30s) → re-scan CDP, try to wake agent
-//   3. DELIVERED check (status 'sent') → check MongoDB for agent pickup receipts
-// Status lifecycle: new → sent → delivered → responded
 const RECONCILE_INTERVAL = 10_000;
-const STALE_NEW_THRESHOLD  = 15_000;  // 15s: message stuck in 'new'
-const STALE_SENT_THRESHOLD = 30_000;  // 30s: agent hasn't picked up from MongoDB
+const STALE_NEW_THRESHOLD  = 15_000;    // 15s: message stuck in 'new'
+const STALE_SENT_THRESHOLD = 30_000;    // 30s: agent hasn't picked up from MongoDB
+const MAX_RESCUE_AGE       = 300_000;   // 5 min: stop trying to rescue very old messages
+const MAX_WAKE_AGE         = 600_000;   // 10 min: stop CDP wake attempts
 
 async function reconcileDelivery() {
     const now = Date.now();
@@ -1845,15 +1842,30 @@ async function reconcileDelivery() {
             (now - new Date(m.createdAt).getTime()) > STALE_NEW_THRESHOLD
         );
         if (stuckNew.length > 0) {
-            log('RECONCILE', `${stuckNew.length} message(s) stuck in 'new' — forcing poke...`);
-            await tryPoke(true);  // Re-attempt full poke cycle
-            dirty = true;
+            // Expire messages older than MAX_RESCUE_AGE — they'll never deliver
+            const rescuable = [];
+            for (const m of stuckNew) {
+                const age = now - new Date(m.createdAt).getTime();
+                if (age > MAX_RESCUE_AGE) {
+                    m.status = 'expired';
+                    broadcast('message_ack', { id: m.id, status: 'expired', receipt: '✗ Expired' });
+                    dirty = true;
+                } else {
+                    rescuable.push(m);
+                }
+            }
+            if (rescuable.length > 0) {
+                log('RECONCILE', `${rescuable.length} message(s) stuck in 'new' — forcing poke...`);
+                await tryPoke(true);
+                dirty = true;
+            }
         }
 
         // ── Phase 2: Re-scan CDP for 'sent' messages the agent hasn't picked up ──
         const staleSent = STATE.messages.filter(m =>
             m.from === 'user' && m.status === 'sent' && m.memflowInboxId &&
-            (now - new Date(m.createdAt).getTime()) > STALE_SENT_THRESHOLD
+            (now - new Date(m.createdAt).getTime()) > STALE_SENT_THRESHOLD &&
+            (now - new Date(m.createdAt).getTime()) < MAX_WAKE_AGE
         );
         if (staleSent.length > 0) {
             // Agent hasn't read from MongoDB yet — try waking it via CDP
