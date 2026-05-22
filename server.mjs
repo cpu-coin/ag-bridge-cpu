@@ -55,8 +55,27 @@ async function runPokeScript() {
     }
 
     // 1. Resolve project name from the message targetId
-    const rawTarget = pendingMsgs[0].targetId || STATE.targetProject?.projectName || STATE.targetProject?.title || 'global';
-    const finalProjectName = typeof rawTarget === 'string' ? rawTarget : (rawTarget?.projectName || rawTarget?.title || 'global');
+    // Resolve project: prefer the message's own targetId, then the selected project,
+    // then the first open workspace, then 'global' as a last resort.
+    const rawTarget = pendingMsgs[0].targetId
+        || STATE.targetProject?.projectName
+        || STATE.targetProject?.title
+        || null;
+    // If still null, use the first live process-scan workspace as the implicit target
+    let finalProjectName;
+    if (rawTarget && rawTarget !== 'global') {
+        finalProjectName = typeof rawTarget === 'string'
+            ? rawTarget
+            : (rawTarget?.projectName || rawTarget?.title || 'global');
+    } else {
+        // Auto-pick: use targetProject if set, otherwise use the first IDE workspace
+        const auto = STATE.targetProject;
+        if (auto) {
+            finalProjectName = typeof auto === 'string' ? auto : (auto.projectName || auto.title || 'global');
+        } else {
+            finalProjectName = 'global';
+        }
+    }
 
     // 2. Build combined message text
     const msgText = pendingMsgs.map(m => m.text).join('\n\n')
@@ -1152,7 +1171,7 @@ app.get('/projects', checkAuth, async (req, res) => {
                     }
                 }
             }
-            const bucket = projKey || 'ungrouped';
+            const bucket = projKey || '📡 Global';
             if (!projectsGroupedMap[bucket]) {
                 projectsGroupedMap[bucket] = {
                     name: bucket,

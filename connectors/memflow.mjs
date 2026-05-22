@@ -1,337 +1,245 @@
 /**
- * MemFlow Connector for AG Bridge
- * 
- * Replaces the CDP/AppleScript "poke" mechanism with direct MemFlow
- * database writes. When a user sends a message from mobile, this connector
- * writes it into MemFlow's SQLite as a knowledge entry. Any MCP-connected
- * agent (Antigravity, VibeCraft, Maitrix, headless CLI) will pick it up
- * during its normal memory_agent_prepare cycle.
+ * connectors/memflow.mjs — MongoDB-backed MemFlow connector for ag_bridge
  *
- * No IDE, no CDP port, no Accessibility permissions required.
+ * Replaces the old SQLite-based implementation. The running memflow MCP server
+ * (`memflow-cpu`) uses MongoDB (connector: "mongodb" in ~/.memflow/config.json),
+ * so this connector must read and write to the same MongoDB database.
+ *
+ * Collection: "memories"  (memflow standard)
+ * Database:   from config.mongo.database  (memflow_default)
+ *
+ * Documents follow the MemoryEntry schema used by MongoDBConnector in memflow-cpu:
+ *   { id, key, content, coordinates: { namespace, project, scope }, tags, metadata, ... }
+ *
+ * Namespaces used by ag_bridge:
+ *   ag_bridge/inbox   — messages FROM mobile TO agent  (we write, agent reads)
+ *   ag_bridge/outbox  — messages FROM agent TO mobile  (agent writes, we read)
  */
 
-import { execSync } from 'child_process';
+import { readFile } from 'fs/promises';
 import crypto from 'crypto';
+import path from 'path';
+import os from 'os';
 
-export const CONNECTOR_ID = 'memflow';
+// ── Config ────────────────────────────────────────────────────────────────────
 
-// MemFlow CLI path (absolute path to ensure background processes find it)
-const MEMFLOW_BIN = process.env.MEMFLOW_BIN || '/Users/seanbarger_1/.memflow/bin/memflow';
-
-// Namespace constants for bridge messages
-const INBOX_NAMESPACE = 'ag_bridge/inbox';
+const INBOX_NAMESPACE  = 'ag_bridge/inbox';
 const OUTBOX_NAMESPACE = 'ag_bridge/outbox';
+const COLLECTION = 'memories';
 
-/**
- * Check if MemFlow is available and reachable.
- * Returns an empty array to prevent the bridge UI from exposing MemFlow
- * as a selectable "execution window" target. MemFlow is strictly used 
- * as a background persistence bus via direct pokeTarget() calls.
- */
-export async function getTargets() {
-    return [];
+let _client = null;
+let _db     = null;
+let _col    = null;
+
+async function loadConfig() {
+    const cfgPath = path.join(os.homedir(), '.memflow', 'config.json');
+    try {
+        const raw = await readFile(cfgPath, 'utf8');
+        return JSON.parse(raw);
+    } catch (e) {
+        console.warn('[MEMFLOW] Could not read ~/.memflow/config.json:', e.message);
+        return null;
+    }
 }
 
-/**
- * "Poke" via MemFlow — writes the message into MemFlow's database
- * as a knowledge entry that any connected agent can read.
- * 
- * This completely bypasses CDP and AppleScript.
- */
-export async function poke(target, messageContent, metadata = {}) {
-    const msgId = `msg_${crypto.randomBytes(6).toString('hex')}`;
-    const project = metadata.project || 'global';
-    const timestamp = new Date().toISOString();
+async function getCollection() {
+    if (_col) return _col;
 
-    const entry = {
-        key: `ag_bridge/inbox/${msgId}`,
-        content: messageContent,
+    const cfg = await loadConfig();
+    if (!cfg || !cfg.mongo?.uri) {
+        throw new Error('[MEMFLOW] No MongoDB URI in ~/.memflow/config.json (cfg.mongo.uri)');
+    }
+
+    const { MongoClient } = await import('mongodb');
+    _client = new MongoClient(cfg.mongo.uri, {
+        maxPoolSize: 5,
+        serverSelectionTimeoutMS: 10_000,
+        socketTimeoutMS: 45_000,
+    });
+    await _client.connect();
+    _db  = _client.db(cfg.mongo.database || 'memflow_default');
+    _col = _db.collection(COLLECTION);
+    console.log('[MEMFLOW] Connected to MongoDB');
+    return _col;
+}
+
+// ── Write (inbox — mobile → agent) ───────────────────────────────────────────
+
+/**
+ * Write a message to the MemFlow inbox so the agent picks it up via
+ * mobile_read_inbox MCP tool. Returns { ok, id }.
+ */
+export async function writeInboxMessage(text, metadata = {}) {
+    const col = await getCollection();
+    const msgId   = metadata.id || `inbox_${crypto.randomBytes(6).toString('hex')}`;
+    const project = metadata.project || 'global';
+    const now     = new Date().toISOString();
+
+    const doc = {
+        id:      msgId,
+        key:     `ag_bridge/inbox/${msgId}`,
+        content: text,
         coordinates: {
             namespace: INBOX_NAMESPACE,
+            project,
             scope: 'workspace',
-            project: project
         },
         kind: 'knowledge',
-        tags: ['mobile', 'pending', 'ag_bridge', project],
+        tags: ['ag_bridge', 'inbox', 'unread', project],
         metadata: {
             msgId,
-            from: metadata.from || 'user',
-            to: metadata.to || 'agent',
-            channel: metadata.channel || 'work',
-            mobileTimestamp: timestamp,
-            status: 'pending',
-            project
+            from:       metadata.from || 'user',
+            to:         'agent',
+            channel:    metadata.channel || 'work',
+            status:     'unread',
+            project,
+            timestamp:  now,
         },
-        provenance: {
-            source: 'agent',
-            actorId: 'ag_bridge_mobile'
-        }
+        provenance: { source: 'ag_bridge_mobile', actorId: 'mobile_user' },
+        createdAt:  now,
+        updatedAt:  now,
+        version:    1,
     };
 
-    try {
-        // Primary method: Direct SQLite write to MemFlow's database.
-        // This is the most reliable path since ag_bridge runs as a standalone
-        // Node server, not inside an MCP session.
-        const dbPath = process.env.MEMFLOW_SQLITE_PATH || `${process.env.HOME}/.memflow/memflow.sqlite`;
-        const result = await writeToDB(dbPath, entry);
-        console.log(`[MEMFLOW] Message ${msgId} written to MemFlow inbox for project: ${project}`);
-        return result;
-    } catch (dbError) {
-        console.warn('[MEMFLOW] Direct DB write failed, using drop file fallback...', dbError.message);
-        
-        // Fallback: Write to a JSON drop file that can be manually imported
-        try {
-            return await writeDropFile(entry);
-        } catch (dropError) {
-            console.error('[MEMFLOW] Drop file also failed:', dropError.message);
-            return { ok: false, error: 'memflow_store_failed', details: dropError.message };
-        }
-    }
+    await col.replaceOne(
+        { 'coordinates.namespace': INBOX_NAMESPACE, key: doc.key },
+        doc,
+        { upsert: true }
+    );
+
+    console.log(`[MEMFLOW] Wrote inbox message: ${msgId} (project: ${project})`);
+    return { ok: true, id: msgId };
 }
 
-/**
- * Write an entry directly to MemFlow's SQLite database using better-sqlite3.
- * MemFlow uses better-sqlite3 under the hood, so we can import it directly.
- */
-async function writeToDB(dbPath, entry) {
-    let Database;
-    try {
-        const mod = await import('better-sqlite3');
-        Database = mod.default;
-    } catch (e) {
-        throw new Error(`better-sqlite3 not available: ${e.message}`);
-    }
-
-    const db = new Database(dbPath);
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const contentHash = crypto.createHash('sha256').update(entry.content).digest('hex').slice(0, 16);
-
-    try {
-        const stmt = db.prepare(`
-            INSERT INTO memory_entries (
-                id, key, title, content, namespace, project_id, coordinates,
-                kind, tags, metadata, source, provenance, confidence,
-                embedding, schema_version, embedding_version, content_hash,
-                created_at, updated_at, expires_at, last_verified_at, version
-            ) VALUES (
-                ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?, ?
-            )
-        `);
-
-        stmt.run(
-            id,
-            entry.key,
-            entry.key, // title
-            entry.content,
-            entry.coordinates.namespace,
-            entry.coordinates.project || null,
-            JSON.stringify(entry.coordinates),
-            entry.kind || 'knowledge',
-            JSON.stringify(entry.tags || []),
-            JSON.stringify(entry.metadata || {}),
-            'ag_bridge',
-            JSON.stringify(entry.provenance || {}),
-            entry.confidence ?? 0.8,
-            null, // embedding
-            1,    // schema_version
-            'none',
-            contentHash,
-            now,
-            now,
-            null, // expires_at
-            now,  // last_verified_at
-            1     // version
-        );
-
-        return { ok: true, method: 'memflow_sqlite', id, msgId: entry.metadata.msgId };
-    } finally {
-        db.close();
-    }
-}
+// ── Read (outbox — agent → mobile) ────────────────────────────────────────────
 
 /**
- * Fallback: Write a JSON drop file for manual import.
- */
-async function writeDropFile(entry) {
-    const fs = await import('fs/promises');
-    const path = await import('path');
-    const dropDir = process.env.MEMFLOW_DROP_DIR || `${process.env.HOME}/.memflow/drop`;
-    
-    await fs.mkdir(dropDir, { recursive: true });
-    const dropFile = path.join(dropDir, `ag_bridge_${entry.metadata.msgId}.json`);
-    await fs.writeFile(dropFile, JSON.stringify(entry, null, 2));
-    
-    console.log(`[MEMFLOW] Wrote drop file: ${dropFile}`);
-    return { ok: true, method: 'memflow_drop_file', dropFile };
-}
-
-/**
- * Poll for agent responses written to MemFlow's outbox namespace.
- * Uses direct SQLite reads to match the write path.
+ * Poll for agent responses the agent wrote via mobile_respond MCP tool.
+ * Returns array of message objects, newest-first, limited to 20.
  */
 export async function pollResponses(project) {
-    const dbPath = process.env.MEMFLOW_SQLITE_PATH || `${process.env.HOME}/.memflow/memflow.sqlite`;
-    
     try {
-        const mod = await import('better-sqlite3');
-        const Database = mod.default;
-        const db = new Database(dbPath, { readonly: true });
-        
-        try {
-            const rows = db.prepare(`
-                SELECT id, key, content, metadata, created_at
-                FROM memory_entries
-                WHERE namespace = ?
-                  AND tags LIKE '%"unread"%'
-                  ${project ? "AND (project_id = ? OR tags LIKE ?)" : ""}
-                ORDER BY created_at DESC
-                LIMIT 20
-            `).all(
-                OUTBOX_NAMESPACE,
-                ...(project ? [project, `%"${project}"%`] : [])
-            );
-            
-            return rows.map(r => {
-                const meta = JSON.parse(r.metadata || '{}');
-                return {
-                    id: meta.msgId || r.id,
-                    memflowId: r.id,
-                    text: r.content,
-                    from: meta.from || 'agent',
-                    channel: meta.channel || 'work',
-                    createdAt: r.created_at,
-                    project: meta.project || project
-                };
-            });
-        } finally {
-            db.close();
+        const col = await getCollection();
+
+        const filter = {
+            'coordinates.namespace': OUTBOX_NAMESPACE,
+            tags: 'unread',
+        };
+        if (project) {
+            filter.$or = [
+                { 'coordinates.project': project },
+                { tags: project },
+            ];
         }
+
+        const docs = await col
+            .find(filter)
+            .sort({ createdAt: -1 })
+            .limit(20)
+            .toArray();
+
+        return docs.map(doc => {
+            const meta = doc.metadata || {};
+            return {
+                id:         doc.id || doc._id?.toString(),
+                memflowId:  doc.id || doc._id?.toString(),
+                key:        doc.key,
+                text:       doc.content,
+                from:       meta.from    || 'agent',
+                to:         meta.to      || 'user',
+                channel:    meta.channel || 'work',
+                project:    meta.project || doc.coordinates?.project || project,
+                createdAt:  doc.createdAt,
+                status:     meta.status  || 'unread',
+                approvalId: meta.approvalId || null,
+                kind:       meta.kind       || null,
+                details:    meta.details    || null,
+                risk:       meta.risk       || null,
+            };
+        });
     } catch (e) {
-        // Silent fail — DB not available or no entries
+        console.error('[MEMFLOW] pollResponses error:', e.message);
         return [];
     }
 }
 
 /**
- * Read pending messages from the MemFlow inbox (mobile → agent direction).
- * Used by the MCP agent tool to check for mobile messages.
+ * Mark outbox messages as read so they don't re-appear on next poll.
  */
-export async function readInbox(project) {
-    const dbPath = process.env.MEMFLOW_SQLITE_PATH || `${process.env.HOME}/.memflow/memflow.sqlite`;
-    
+export async function markMessagesRead(ids) {
+    if (!ids || ids.length === 0) return;
     try {
-        const mod = await import('better-sqlite3');
-        const Database = mod.default;
-        const db = new Database(dbPath, { readonly: true });
-        
-        try {
-            const rows = db.prepare(`
-                SELECT id, key, content, metadata, created_at
-                FROM memory_entries
-                WHERE namespace = ?
-                  AND tags LIKE '%"pending"%'
-                  ${project ? "AND (project_id = ? OR tags LIKE ?)" : ""}
-                ORDER BY created_at ASC
-                LIMIT 50
-            `).all(
-                INBOX_NAMESPACE,
-                ...(project ? [project, `%"${project}"%`] : [])
-            );
-            
-            return rows.map(r => {
-                const meta = JSON.parse(r.metadata || '{}');
-                return {
-                    id: meta.msgId || r.id,
-                    memflowId: r.id,
-                    text: r.content,
-                    from: meta.from || 'user',
-                    channel: meta.channel || 'work',
-                    createdAt: r.created_at,
-                    project: meta.project || project
-                };
-            });
-        } finally {
-            db.close();
-        }
-    } catch (e) {
-        return [];
-    }
-}
-
-/**
- * Mark inbox messages as read (removes "pending" tag, adds "read").
- */
-export async function markAsRead(memflowIds) {
-    if (!memflowIds || memflowIds.length === 0) return;
-    
-    const dbPath = process.env.MEMFLOW_SQLITE_PATH || `${process.env.HOME}/.memflow/memflow.sqlite`;
-    
-    try {
-        const mod = await import('better-sqlite3');
-        const Database = mod.default;
-        const db = new Database(dbPath);
-        const now = new Date().toISOString();
-        
-        try {
-            const stmt = db.prepare(`
-                UPDATE memory_entries 
-                SET tags = REPLACE(REPLACE(tags, '"pending"', '"read"'), '"unread"', '"read"'),
-                    metadata = json_set(metadata, '$.status', 'read'),
-                    updated_at = ?
-                WHERE id = ?
-            `);
-            
-            for (const id of memflowIds) {
-                stmt.run(now, id);
+        const col = await getCollection();
+        await col.updateMany(
+            { id: { $in: ids } },
+            {
+                $set:  { 'metadata.status': 'read', updatedAt: new Date().toISOString() },
+                $pull: { tags: 'unread' },
             }
-        } finally {
-            db.close();
-        }
+        );
     } catch (e) {
-        console.warn('[MEMFLOW] Failed to mark messages as read:', e.message);
+        console.warn('[MEMFLOW] markMessagesRead error:', e.message);
     }
 }
 
-/**
- * Write an agent response to the MemFlow outbox.
- * This is called by the agent (via MCP tool) to send responses back to mobile.
- */
-export async function writeResponse(messageContent, metadata = {}) {
-    const msgId = metadata.id || `resp_${crypto.randomBytes(6).toString('hex')}`;
-    const project = metadata.project || 'global';
-    const now = new Date().toISOString();
+// ── Write (outbox — for writeResponse used by approval surfacing) ─────────────
 
-    const entry = {
-        key: `ag_bridge/outbox/${msgId}`,
-        content: messageContent,
+/**
+ * Write an agent response/approval request to the MemFlow outbox.
+ * The mobile_read_inbox-based polling flow picks these up.
+ */
+export async function writeResponse(text, metadata = {}) {
+    const col = await getCollection();
+    const msgId   = metadata.id || `resp_${crypto.randomBytes(6).toString('hex')}`;
+    const project = metadata.project || 'global';
+    const now     = new Date().toISOString();
+
+    const doc = {
+        id:      msgId,
+        key:     `ag_bridge/outbox/${msgId}`,
+        content: text,
         coordinates: {
             namespace: OUTBOX_NAMESPACE,
+            project,
             scope: 'workspace',
-            project: project
         },
         kind: 'knowledge',
-        tags: ['agent-response', 'unread', 'ag_bridge', project],
+        tags: ['ag_bridge', 'outbox', 'unread', project, ...(metadata.channel === 'approval' ? ['approval'] : [])],
         metadata: {
             msgId,
-            from: metadata.from || 'agent',
-            to: 'user',
-            channel: metadata.channel || 'work',
-            timestamp: now,
-            status: 'unread',
+            from:       metadata.from    || 'agent',
+            to:         'user',
+            channel:    metadata.channel || 'work',
+            status:     'unread',
             project,
-            inReplyTo: metadata.inReplyTo || null
+            timestamp:  now,
+            inReplyTo:  metadata.inReplyTo || null,
+            approvalId: metadata.approvalId || null,
+            kind:       metadata.kind || null,
+            details:    metadata.details || null,
         },
-        provenance: {
-            source: 'agent',
-            actorId: metadata.actorId || 'ag_bridge_agent'
-        }
+        provenance: { source: 'agent', actorId: metadata.actorId || 'ag_bridge_agent' },
+        createdAt:  now,
+        updatedAt:  now,
+        version:    1,
     };
 
-    const dbPath = process.env.MEMFLOW_SQLITE_PATH || `${process.env.HOME}/.memflow/memflow.sqlite`;
-    return writeToDB(dbPath, entry);
+    await col.replaceOne(
+        { 'coordinates.namespace': OUTBOX_NAMESPACE, key: doc.key },
+        doc,
+        { upsert: true }
+    );
+
+    return { ok: true, method: 'memflow_mongodb', id: msgId };
 }
 
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+
+export async function close() {
+    if (_client) {
+        await _client.close();
+        _client = null;
+        _db     = null;
+        _col    = null;
+    }
+}

@@ -58,9 +58,7 @@ export async function pokeTarget(target, messageContent, metadata = {}) {
 // Re-export MemFlow-specific functions for the server polling loop
 // and MCP agent tools. These enable the full round-trip:
 //   Mobile → MemFlow inbox → Agent reads → Agent writes response → MemFlow outbox → Mobile
-export const {
-    readInbox: memflowReadInbox,
-    pollResponses: memflowPollResponses,
-    markAsRead: memflowMarkAsRead,
-    writeResponse: memflowWriteResponse
-} = memflow;
+export const memflowPollResponses = memflow.pollResponses;
+export const memflowMarkAsRead    = memflow.markMessagesRead;
+export const memflowWriteResponse = memflow.writeResponse;
+export const memflowReadInbox     = memflow.writeInboxMessage; // write to inbox so agent picks it up
