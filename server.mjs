@@ -612,16 +612,19 @@ app.use((req, res, next) => {
 app.use(express.static('public'));
 
 const requireAuth = (req, res, next) => {
-    // Allow localhost (MCP server) to bypass auth
     const ip = req.ip || req.connection.remoteAddress;
+    const token = req.headers['x-ag-token'];
+
+    // Allow localhost (MCP server) to bypass auth
     if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') {
+        req.authSource = token ? 'user' : 'agent';
         return next();
     }
 
-    const token = req.headers['x-ag-token'];
     if (!token || !TOKENS.has(token)) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
+    req.authSource = 'user';
     next();
 };
 
@@ -759,6 +762,7 @@ app.post('/approvals/:id/approve', requireAuth, async (req, res) => {
 
     approval.status = 'approved';
     approval.decidedAt = new Date().toISOString();
+    approval.approvedBy = req.authSource || 'user';
     
     // Allow Always Logic
     if (always && approval.details && approval.details.cmd) {
@@ -776,13 +780,14 @@ app.post('/approvals/:id/approve', requireAuth, async (req, res) => {
     const msg = STATE.messages.find(m => m.approvalId === id);
     if (msg) {
         msg.approvalStatus = 'approved';
+        msg.approvedBy = req.authSource || 'user';
         saveState();
     }
 
     saveApprovals();
 
-    console.log(`[APPROVAL] ${id} APPROVED`);
-    broadcast('approval_decided', { id, status: 'approved' });
+    console.log(`[APPROVAL] ${id} APPROVED by ${approval.approvedBy}`);
+    broadcast('approval_decided', { id, status: 'approved', approvedBy: approval.approvedBy });
     if (msg) broadcast('message_update', msg);
     res.json({ ok: true, approval });
 });
@@ -798,17 +803,19 @@ app.post('/approvals/:id/deny', requireAuth, (req, res) => {
 
     approval.status = 'denied';
     approval.decidedAt = new Date().toISOString();
+    approval.approvedBy = req.authSource || 'user';
     
     const msg = STATE.messages.find(m => m.approvalId === id);
     if (msg) {
         msg.approvalStatus = 'denied';
+        msg.approvedBy = req.authSource || 'user';
         saveState();
     }
 
     saveApprovals();
 
-    console.log(`[APPROVAL] ${id} DENIED`);
-    broadcast('approval_decided', { id, status: 'denied' });
+    console.log(`[APPROVAL] ${id} DENIED by ${approval.approvedBy}`);
+    broadcast('approval_decided', { id, status: 'denied', approvedBy: approval.approvedBy });
     if (msg) broadcast('message_update', msg);
     res.json({ ok: true, approval });
 });
@@ -1348,10 +1355,11 @@ app.post('/agent/request-approval', (req, res) => {
         newApproval.status = 'approved';
         newApproval.decidedAt = new Date().toISOString();
         newApproval.autoApproved = true;
+        newApproval.approvedBy = 'auto';
         STATE.approvals.push(newApproval);
         saveApprovals();
         console.log(`[AUTONOMOUS] Agent request auto-approved: ${newApproval.id} (${details?.cmd || kind})`);
-        broadcast('approval_decided', { id: newApproval.id, status: 'approved', auto: true });
+        broadcast('approval_decided', { id: newApproval.id, status: 'approved', auto: true, approvedBy: 'auto' });
         return res.json({ ok: true, approval: newApproval });
     }
 
@@ -1431,10 +1439,11 @@ app.post('/approvals/request', checkAuth, (req, res) => {
         newApproval.status = 'approved';
         newApproval.decidedAt = new Date().toISOString();
         newApproval.autoApproved = true;
+        newApproval.approvedBy = 'auto';
         STATE.approvals.push(newApproval);
         saveApprovals();
         console.log(`[AUTONOMOUS] Auto-approved ${newApproval.id} (${kind}: ${details?.cmd || kind})`);
-        broadcast('approval_decided', { id: newApproval.id, status: 'approved', auto: true });
+        broadcast('approval_decided', { id: newApproval.id, status: 'approved', auto: true, approvedBy: 'auto' });
         return res.json({ ok: true, approval: newApproval, auto: true });
     }
     // ─────────────────────────────────────────────────────────────────────────

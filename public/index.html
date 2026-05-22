@@ -207,7 +207,15 @@
     .nav-item.active { color: var(--text); border-left-color: var(--primary); background: rgba(56,189,248,0.06); }
     .nav-item .nav-icon { width: 36px; height: 36px; border-radius: 9px; background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .nav-item.active .nav-icon { background: rgba(56,189,248,0.15); }
-    .nav-badge { margin-left: auto; background: var(--primary); color: #000; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 100px; min-width: 20px; text-align: center; }
+    .nav-badge { margin-left: auto; background: #f43f5e; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 100px; min-width: 20px; text-align: center; }
+    .nav-badge.hidden { display: none; }
+    .nav-badge.pulse { animation: pulse-badge 1.5s ease-in-out infinite; }
+    @keyframes pulse-badge { 0%, 100% { box-shadow: 0 0 0 0 rgba(244,63,94,0.5); } 50% { box-shadow: 0 0 8px 4px rgba(244,63,94,0.3); } }
+    .bell-btn { position: relative; background: transparent; border: none; padding: 6px; cursor: pointer; color: var(--text-dim); transition: color 0.2s, transform 0.2s; }
+    .bell-btn:hover { color: white; transform: scale(1.1); }
+    .bell-btn.has-pending { color: #f43f5e; animation: bell-ring 2s ease-in-out infinite; }
+    .bell-btn .bell-count { position: absolute; top: -2px; right: -4px; background: #f43f5e; color: white; font-size: 9px; font-weight: 800; min-width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 6px rgba(244,63,94,0.5); }
+    @keyframes bell-ring { 0%, 100% { transform: rotate(0deg); } 5% { transform: rotate(15deg); } 10% { transform: rotate(-15deg); } 15% { transform: rotate(10deg); } 20% { transform: rotate(-10deg); } 25% { transform: rotate(0deg); } }
     .nav-footer { padding: 16px 20px; border-top: 1px solid var(--glass-border); font-size: 11px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
 
     /* Active tab label */
@@ -340,6 +348,8 @@
 
     /* Views */
     #pairing-view { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+    a.credit-link { transition: all 0.2s ease-in-out; }
+    a.credit-link:hover { color: white !important; border-color: var(--primary) !important; background: rgba(56, 189, 248, 0.08) !important; transform: translateY(-1px); }
   </style>
 </head>
 <body>
@@ -412,7 +422,11 @@
         </button>
         <span id="active-tab-label">Monitor</span>
         <span id="product-status-indicator" class="product-status ide" style="margin-left: auto; display: none;">IDE</span>
-        <span id="agent-status-pill" class="agent-status" style="margin-left: 8px;">Connecting...</span>
+        <button id="bell-btn" class="bell-btn" onclick="switchTab('tab-queue', document.getElementById('nav-queue'))" title="Pending Approvals" style="margin-left: 4px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+          <span class="bell-count" id="bell-count" style="display: none;">0</span>
+        </button>
+        <span id="agent-status-pill" class="agent-status" style="margin-left: 4px;">Connecting...</span>
       </div>
     </div>
     <!-- pending-count hidden span kept for JS compat -->
@@ -572,6 +586,34 @@
         <button class="danger" onclick="restartServer()">Restart Server</button>
       </div>
 
+      <!-- Credits & Ecosystem Card -->
+      <div class="glass-card" style="border-color: rgba(129, 140, 248, 0.35); background: linear-gradient(135deg, rgba(129, 140, 248, 0.05) 0%, rgba(56, 189, 248, 0.05) 100%); margin-bottom: 16px; position: relative; overflow: hidden;">
+        <div style="position: absolute; top: -30px; right: -30px; width: 80px; height: 80px; background: radial-gradient(circle, rgba(129, 140, 248, 0.2) 0%, transparent 70%); pointer-events: none;"></div>
+        <h3 style="background: linear-gradient(to right, #a855f7, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700; font-size: 18px; margin-bottom: 6px;">Ecosystem & Credits</h3>
+        <p style="font-size: 13px; margin-top: 8px; margin-bottom: 12px; line-height: 1.5; color: var(--text-dim);">
+          Antigravity works best with <strong style="color: var(--primary);">MemFlow</strong>, and is proud to be part of the <a href="https://cpucoin.io" target="_blank" style="color: #fff; text-decoration: none; border-bottom: 1px dotted var(--primary); font-weight: 600;">cpucoin.io</a> and <a href="https://equilibrium.com" target="_blank" style="color: #fff; text-decoration: none; border-bottom: 1px dotted var(--accent); font-weight: 600;">equilibrium.com</a> ecosystem.
+        </p>
+        
+        <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; text-align: center; backdrop-filter: blur(4px);">
+          <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 2px; font-weight: 700;">Global Initiative</div>
+          <div style="font-size: 13px; color: var(--text); font-weight: 600;">
+            Part of the <span style="background: linear-gradient(to right, #ffffff, #9ca3af); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">AI for Universal Peace</span> initiative
+          </div>
+          <div style="margin-top: 6px;">
+            <a href="https://peacesanctuary.org" target="_blank" style="font-size: 13px; color: var(--primary); text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; transition: opacity 0.2s;">
+              🕊️ peacesanctuary.org
+            </a>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding-top: 10px; border-top: 1px solid var(--glass-border);">
+          <a href="https://cpucoin.io" target="_blank" class="credit-link" style="color: var(--text-dim); font-size: 11px; text-decoration: none; padding: 5px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); font-family: 'JetBrains Mono', monospace; font-weight: 600;">cpucoin.io</a>
+          <a href="https://maitrix.io" target="_blank" class="credit-link" style="color: var(--text-dim); font-size: 11px; text-decoration: none; padding: 5px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); font-family: 'JetBrains Mono', monospace; font-weight: 600;">maitrix.io</a>
+          <a href="https://tweekit.io" target="_blank" class="credit-link" style="color: var(--text-dim); font-size: 11px; text-decoration: none; padding: 5px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); font-family: 'JetBrains Mono', monospace; font-weight: 600;">tweekit.io</a>
+          <a href="https://equilibrium.com" target="_blank" class="credit-link" style="color: var(--text-dim); font-size: 11px; text-decoration: none; padding: 5px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); font-family: 'JetBrains Mono', monospace; font-weight: 600;">equilibrium.com</a>
+        </div>
+      </div>
+
       <div class="glass-card">
         <h3>System Logs</h3>
         <div id="event-log" style="margin-top: 12px;"></div>
@@ -587,6 +629,88 @@
     let wsConnected = false;
     let healthTimer = null;
     let serverReachable = true;
+
+    function updateChatInputState() {
+      const selector = document.getElementById('chat-project-selector');
+      const selectorVal = selector ? selector.value : 'global';
+      const isGlobal = !selectorVal || selectorVal === 'global' || selectorVal === 'Global Scope';
+      
+      const input = document.getElementById('chat-input');
+      const sendBtn = document.querySelector('button[onclick="sendChat()"]');
+      const sidebar = document.querySelector('.quick-actions-sidebar');
+      let banner = document.getElementById('global-monitor-banner');
+      
+      if (isGlobal) {
+        if (input) {
+          input.disabled = true;
+          input.placeholder = "Global scope is monitor-only...";
+        }
+        if (sendBtn) sendBtn.disabled = true;
+        if (sidebar) {
+          sidebar.style.pointerEvents = 'none';
+          sidebar.style.opacity = '0.3';
+        }
+        
+        if (!banner) {
+          banner = document.createElement('div');
+          banner.id = 'global-monitor-banner';
+          banner.style.cssText = `
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.03) 100%);
+            border: 1px solid rgba(16, 185, 129, 0.25);
+            border-radius: 12px;
+            padding: 18px 16px;
+            margin-top: 12px;
+            text-align: center;
+            backdrop-filter: blur(8px);
+            animation: fadeIn 0.4s ease-in-out;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+          `;
+          banner.innerHTML = `
+            <div style="font-size: 26px; margin-bottom: 8px;">🖥️</div>
+            <div style="font-weight: 700; color: #10b981; font-size: 14px; margin-bottom: 6px; letter-spacing: 0.75px; text-transform: uppercase;">Global Monitor Mode</div>
+            <div style="font-size: 13px; color: var(--text-dim); max-width: 420px; margin: 0 auto; line-height: 1.5; font-family: inherit;">
+              Global scope is strictly monitor-only to keep context clean. 
+              Please select a specific <strong>Project Workspace</strong> or <strong>Conversation</strong> from the Projects tab or the dropdown selector above to interact.
+            </div>
+          `;
+          const chatMain = document.querySelector('.chat-main-area');
+          if (chatMain) {
+            chatMain.appendChild(banner);
+          }
+        } else {
+          banner.style.display = 'block';
+        }
+      } else {
+        if (input) {
+          input.disabled = false;
+          input.placeholder = "Message Antigravity...";
+        }
+        if (sendBtn) sendBtn.disabled = false;
+        if (sidebar) {
+          sidebar.style.pointerEvents = 'auto';
+          sidebar.style.opacity = '1';
+        }
+        if (banner) banner.style.display = 'none';
+      }
+    }
+
+    function toggleOlderConvos(projName) {
+      const safeName = projName.replace(/'/g, "\\'");
+      const items = document.querySelectorAll('.older-convo-item-' + safeName);
+      const toggleBtn = document.getElementById('toggle-older-' + safeName);
+      if (items.length === 0) return;
+      
+      const isHidden = items[0].style.display === 'none';
+      items.forEach(el => {
+        el.style.display = isHidden ? 'flex' : 'none';
+      });
+      
+      if (toggleBtn) {
+        toggleBtn.innerHTML = isHidden 
+          ? '<span class="convo-icon" style="color: var(--primary);">▲</span> <span class="convo-title" style="color: var(--primary); font-weight: 600;">Hide older</span>' 
+          : '<span class="convo-icon" style="color: var(--primary);">▾</span> <span class="convo-title" style="color: var(--primary); font-weight: 600;">Show older (' + items.length + ')</span>';
+      }
+    }
 
     // --- Init ---
     function init() {
@@ -680,6 +804,7 @@
       if (tabId === 'tab-chat') {
           await fetchProjects();
           await fetchMessages();
+          updateChatInputState();
       }
       if (tabId === 'tab-projects') fetchProjects();
       if (tabId === 'tab-queue') fetchApprovals();
@@ -831,8 +956,9 @@
     // --- Fetches ---
     async function fetchMessages() {
       // 1. Chat Tab — filter by selected project, or show all if Global Scope
-      const currentProj = document.getElementById('chat-project-selector').value;
-      const isGlobal = !currentProj || currentProj === 'Global Scope' || currentProj === 'global';
+      const selectorVal = document.getElementById('chat-project-selector').value;
+      const isGlobal = !selectorVal || selectorVal === 'Global Scope' || selectorVal === 'global';
+      const currentProj = isGlobal ? 'global' : selectorVal.split('::')[0];
 
       // When a specific project is selected, filter to it.
       // When Global Scope, show ALL messages (no filterByProject).
@@ -842,6 +968,7 @@
 
       const chatData = await api(chatUrl);
       if (chatData && chatData.messages) renderMessages(chatData.messages);
+      updateChatInputState();
 
       // 2. Monitor Tab — always shows ALL messages across all projects
       const globalData = await api('/messages/inbox?limit=100');
@@ -998,7 +1125,7 @@
       // Update chat-project-selector with two-level options
       if (selector) {
         var oldValue = selector.value;
-        selector.innerHTML = '<option value="global" style="color: black;">Global Scope</option>';
+        selector.innerHTML = '<option value="global" style="color: #10b981; font-weight: 700;">🖥️ Global Scope (Monitor-Only)</option>';
 
         var grouped = data.projectsGrouped || [];
         grouped.forEach(function(proj) {
@@ -1031,21 +1158,21 @@
         }
 
         var activeProj = selector.value.split('::')[0];
-        if (activeProj && activeProj !== 'global') {
-          var projColor = getProjectColor(activeProj);
-          var banner = document.getElementById('active-project-banner');
-          var dot = document.getElementById('active-project-dot');
-          if (banner && dot) {
-            banner.style.background = projColor + '1A';
-            banner.style.borderColor = projColor + '4D';
-            dot.style.background = projColor;
-            dot.style.boxShadow = '0 0 8px ' + projColor;
-            selector.style.color = projColor;
-            selector.style.borderColor = projColor + '66';
-          }
-          document.documentElement.style.setProperty('--primary', projColor);
-          document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+        var isGlobalActive = !activeProj || activeProj === 'global';
+        var projColor = isGlobalActive ? '#10b981' : getProjectColor(activeProj);
+        var banner = document.getElementById('active-project-banner');
+        var dot = document.getElementById('active-project-dot');
+        if (banner && dot) {
+          banner.style.background = projColor + (isGlobalActive ? '0F' : '1A');
+          banner.style.borderColor = projColor + (isGlobalActive ? '33' : '4D');
+          dot.style.background = projColor;
+          dot.style.boxShadow = '0 0 8px ' + projColor;
+          selector.style.color = projColor;
+          selector.style.borderColor = projColor + '66';
         }
+        document.documentElement.style.setProperty('--primary', projColor);
+        document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+        updateChatInputState();
       }
 
       // Render projects grid
@@ -1081,9 +1208,30 @@
             : '<span>' + (lastActive ? 'Last: ' + lastActive : 'Workspace') + '</span>';
 
           var convoHtml = '';
+          convoHtml = '<ul class="convo-list' + (isExpanded ? '' : ' collapsed') + '" id="convo-list-' + safeName + '">';
+          
+          // Subtle, premium top-level "➕ New Conversation" item
+          convoHtml += '<li class="convo-item new-convo-item" onclick="event.stopPropagation(); newConversation(\'' + safeName + '\')" style="border: 1px dashed ' + pColor + '40; border-radius: 8px; margin-bottom: 6px; background: rgba(255,255,255,0.01);">';
+          convoHtml += '<span class="convo-icon" style="color: ' + pColor + ';">➕</span>';
+          convoHtml += '<span class="convo-title" style="color: ' + pColor + '; font-weight: 600;">New Conversation</span>';
+          convoHtml += '</li>';
+          
           if (hasConvos) {
-            convoHtml = '<ul class="convo-list' + (isExpanded ? '' : ' collapsed') + '" id="convo-list-' + safeName + '">';
-            convos.forEach(function(c) {
+            // Distribute visible and older convos
+            var visibleConvos = [];
+            var olderConvos = [];
+            convos.forEach(function(c, index) {
+              var cId = c.conversationId || c.id || '';
+              var isActiveConvo = (cId === selectedConversationId);
+              if (index < 3 || isActiveConvo) {
+                visibleConvos.push(c);
+              } else {
+                olderConvos.push(c);
+              }
+            });
+            
+            // Render visible (active + last 3 recent)
+            visibleConvos.forEach(function(c) {
               var cId = c.conversationId || c.id || '';
               var cTitle = c.title || 'Conversation';
               if (cTitle.indexOf(proj.name) === 0) {
@@ -1096,8 +1244,30 @@
               convoHtml += '<span class="convo-title">' + escapeHtml(cTitle) + '</span>';
               convoHtml += '</li>';
             });
-            convoHtml += '</ul>';
+            
+            // Render older (hidden by default)
+            olderConvos.forEach(function(c) {
+              var cId = c.conversationId || c.id || '';
+              var cTitle = c.title || 'Conversation';
+              if (cTitle.indexOf(proj.name) === 0) {
+                cTitle = cTitle.substring(proj.name.length).replace(/^\s*[—–\-]\s*/, '') || 'Conversation';
+              }
+              var safeCId = String(cId).replace(/'/g, "\\'");
+              convoHtml += '<li class="convo-item older-convo-item-' + safeName + '" onclick="event.stopPropagation(); selectConversation(\'' + safeName + '\', \'' + safeCId + '\')" style="display: none;">';
+              convoHtml += '<span class="convo-icon">💬</span>';
+              convoHtml += '<span class="convo-title">' + escapeHtml(cTitle) + '</span>';
+              convoHtml += '</li>';
+            });
+            
+            // Render toggle link if there are older ones
+            if (olderConvos.length > 0) {
+              convoHtml += '<li class="convo-item toggle-older-item" id="toggle-older-' + safeName + '" onclick="event.stopPropagation(); toggleOlderConvos(\'' + safeName + '\')" style="border: 1px solid rgba(255,255,255,0.03); background: rgba(255,255,255,0.01);">';
+              convoHtml += '<span class="convo-icon" style="color: ' + pColor + ';">▾</span>';
+              convoHtml += '<span class="convo-title" style="color: ' + pColor + '; font-weight: 600;">Show older (' + olderConvos.length + ')</span>';
+              convoHtml += '</li>';
+            }
           }
+          convoHtml += '</ul>';
 
           var result = '<div>';
           result += '<div class="' + cardClass + '" style="' + cardStyle + '" onclick="selectProject(\'' + safeName + '\')">';
@@ -1106,10 +1276,8 @@
           result += '<div style="font-weight: 600; font-size: 15px; color: ' + (isActive ? 'white' : 'var(--text-dim)') + ';">' + escapeHtml(proj.name) + '</div>';
           result += '<div style="font-size: 12px; color: var(--text-dim); margin-top: 3px;">' + subtitleHtml + '</div>';
           result += '</div>';
-          if (hasConvos) {
-            result += '<span class="convo-count">' + convos.length + '</span>';
-            result += '<span class="chevron' + (isExpanded ? ' open' : '') + '" id="chevron-' + safeName + '">▶</span>';
-          }
+          result += '<span class="convo-count" style="' + (convos.length === 0 ? 'display:none;' : '') + '">' + convos.length + '</span>';
+          result += '<span class="chevron' + (isExpanded ? ' open' : '') + '" id="chevron-' + safeName + '">▶</span>';
           result += '<button class="new-convo-btn" onclick="event.stopPropagation(); newConversation(\'' + safeName + '\')" title="New conversation">+</button>';
           result += '</div>';
           result += convoHtml;
@@ -1123,6 +1291,26 @@
     async function selectProject(target) {
       var payload = target;
       if (typeof target === 'string') {
+        if (target.indexOf('::') !== -1) {
+          var parts = target.split('::');
+          var projectName = parts[0];
+          var conversationId = parts[1];
+          selectedConversationId = conversationId;
+          payload = projectName;
+          
+          await api('/projects/select', 'POST', { project: payload });
+          
+          var selector = document.getElementById('chat-project-selector');
+          if (selector) selector.value = target;
+          
+          var projColor = getProjectColor(payload);
+          document.documentElement.style.setProperty('--primary', projColor);
+          document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+          
+          switchTab('tab-chat', document.getElementById('nav-chat'));
+          await fetchMessages();
+          return;
+        }
         payload = target.replace(' - Visual Studio Code', '').split(' — ')[0].trim();
       } else if (target && target.projectName) {
         payload = target.projectName;
@@ -1177,6 +1365,7 @@
       var projColor = getProjectColor(payload);
       document.documentElement.style.setProperty('--primary', projColor);
       document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+      updateChatInputState();
     }
 
     async function selectConversation(projectName, conversationId) {
@@ -1227,7 +1416,10 @@
       const data = await api('/approvals');
       if (data && data.approvals) {
         const container = document.getElementById('approvals-list');
-        const pendingCount = data.approvals.filter(a => a.status === 'pending').length;
+        
+        const pendingApprovals = data.approvals.filter(a => a.status === 'pending');
+        const decidedApprovals = data.approvals.filter(a => a.status !== 'pending');
+        const pendingCount = pendingApprovals.length;
 
         // Update Accept All button visibility
         const acceptAllBtn = document.getElementById('accept-all-btn');
@@ -1239,7 +1431,25 @@
         var badge = document.getElementById('pending-badge');
         if (badge) {
           badge.textContent = pendingCount;
-          if (pendingCount > 0) { badge.classList.remove('hidden'); } else { badge.classList.add('hidden'); }
+          if (pendingCount > 0) {
+            badge.classList.remove('hidden');
+            badge.classList.add('pulse');
+          } else {
+            badge.classList.add('hidden');
+            badge.classList.remove('pulse');
+          }
+        }
+        // Update top-bar bell button
+        var bellBtn = document.getElementById('bell-btn');
+        var bellCount = document.getElementById('bell-count');
+        if (bellBtn) {
+          if (pendingCount > 0) {
+            bellBtn.classList.add('has-pending');
+            if (bellCount) { bellCount.textContent = pendingCount; bellCount.style.display = 'flex'; }
+          } else {
+            bellBtn.classList.remove('has-pending');
+            if (bellCount) { bellCount.style.display = 'none'; }
+          }
         }
         // Also update the approvals nav item with a visual indicator
         var navApprovals = document.getElementById('nav-queue');
@@ -1259,35 +1469,74 @@
           }
         }
 
-        if (data.approvals.length === 0) {
-          container.innerHTML = '<p style="text-align:center; color:var(--text-dim); padding: 20px;">No pending approvals.</p>';
-          return;
-        }
-        container.innerHTML = data.approvals.map(function(item) {
-          var projTag = (item.meta && item.meta.clientTag) ? item.meta.clientTag : 'global';
-          var pColor = getProjectColor(projTag);
-          var timeStr = new Date(item.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-          var buttonsHtml = '';
-          if (item.status === 'pending') {
-            buttonsHtml = '<div class="flex gap-4 mt-4">' +
+        let html = '';
+
+        // 1. Pending Actions Queue
+        html += '<div style="font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 8px;">⏳ Pending Action Queue <span class="badge" style="background: var(--primary); color: white; padding: 2px 8px; border-radius: 20px; font-size: 11px;">' + pendingCount + '</span></div>';
+        
+        if (pendingCount === 0) {
+          html += '<div class="glass-card" style="border: 2px dashed rgba(16, 185, 129, 0.4); background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.02) 100%); padding: 30px; text-align: center; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); backdrop-filter: blur(4px);">' +
+            '<div style="font-size: 40px; margin-bottom: 12px; filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.5));">✨</div>' +
+            '<h3 style="color: #34d399; font-weight: 700; margin-bottom: 8px; font-size: 18px; letter-spacing: 0.5px;">All Decisions Caught Up</h3>' +
+            '<p style="color: var(--text-dim); font-size: 13px; line-height: 1.5; max-width: 320px; margin: 0 auto;">No pending actions are awaiting authorization. Your agent is running smoothly!</p>' +
+          '</div>';
+        } else {
+          html += pendingApprovals.map(function(item) {
+            var projTag = (item.meta && item.meta.clientTag) ? item.meta.clientTag : 'global';
+            var pColor = getProjectColor(projTag);
+            var timeStr = new Date(item.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            var buttonsHtml = '<div class="flex gap-4 mt-4">' +
               '<button class="danger" onclick="handleApprovalAction(\'' + item.id + '\', \'deny\')" style="flex:1;">Deny</button>' +
               '<button class="success" onclick="handleApprovalAction(\'' + item.id + '\', \'approve\', false)" style="flex:1;">Approve</button>' +
               '<button class="secondary" onclick="handleApprovalAction(\'' + item.id + '\', \'approve\', true)" style="flex:1; font-size:11px;">Always</button>' +
             '</div>';
-          }
-          return '<div class="glass-card approval-item status-' + item.status + '" style="border-left-color: ' + pColor + ';">' +
-            '<div class="flex justify-between items-center mb-4">' +
-              '<span class="tag ' + item.status + '">' + item.status + '</span>' +
-              '<span style="font-size:11px; color:var(--text-dim)">' + timeStr + '</span>' +
-            '</div>' +
-            '<div style="font-weight:600; margin-bottom: 8px;">' +
-              '<span style="color: ' + pColor + '; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(projTag) + '\')">[' + escapeHtml(projTag) + ']</span> ' +
-              item.kind.toUpperCase() +
-            '</div>' +
-            '<pre>' + JSON.stringify(item.details, null, 2) + '</pre>' +
-            buttonsHtml +
-          '</div>';
-        }).join('');
+            var statusLabel = item.status;
+            return '<div class="glass-card approval-item status-' + item.status + '" style="border-left-color: ' + pColor + '; margin-bottom: 16px; border-left-width: 4px;">' +
+              '<div class="flex justify-between items-center mb-4">' +
+                '<span class="tag ' + item.status + '">' + statusLabel + '</span>' +
+                '<span style="font-size:11px; color:var(--text-dim)">' + timeStr + '</span>' +
+              '</div>' +
+              '<div style="font-weight:600; margin-bottom: 8px;">' +
+                '<span style="color: ' + pColor + '; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(projTag) + '\')">[' + escapeHtml(projTag) + ']</span> ' +
+                item.kind.toUpperCase() +
+              '</div>' +
+              '<pre style="background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; font-family: monospace; font-size: 12px; max-height: 200px; overflow: auto; border: 1px solid rgba(255,255,255,0.05);">' + JSON.stringify(item.details, null, 2) + '</pre>' +
+              buttonsHtml +
+            '</div>';
+          }).join('');
+        }
+
+        // 2. Recent Decisions History
+        if (decidedApprovals.length > 0) {
+          html += '<div style="font-size: 12px; font-weight: 700; color: var(--text-dim); margin-top: 32px; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px;">📜 Recent Decisions History</div>';
+          html += '<div style="opacity: 0.75;">' + decidedApprovals.map(function(item) {
+            var projTag = (item.meta && item.meta.clientTag) ? item.meta.clientTag : 'global';
+            var pColor = getProjectColor(projTag);
+            var timeStr = new Date(item.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            var statusLabel = item.status;
+            if (item.status === 'approved') {
+              if (item.approvedBy === 'auto') statusLabel = 'auto-approved';
+              else if (item.approvedBy === 'agent') statusLabel = 'approved via agent';
+              else if (item.approvedBy === 'user') statusLabel = 'approved local';
+            } else if (item.status === 'denied') {
+              if (item.approvedBy === 'agent') statusLabel = 'denied via agent';
+              else if (item.approvedBy === 'user') statusLabel = 'denied local';
+            }
+            return '<div class="glass-card approval-item status-' + item.status + '" style="border-left-color: ' + pColor + '; margin-bottom: 12px; border-left-width: 4px; padding: 12px 16px; background: rgba(255,255,255,0.015); border-color: rgba(255,255,255,0.05);">' +
+              '<div class="flex justify-between items-center mb-2">' +
+                '<span class="tag ' + item.status + '" style="padding: 2px 6px; font-size: 10px;">' + statusLabel + '</span>' +
+                '<span style="font-size: 11px; color:var(--text-dim)">' + timeStr + '</span>' +
+              '</div>' +
+              '<div style="font-weight:600; margin-bottom: 4px; font-size: 13px;">' +
+                '<span style="color: ' + pColor + '; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(projTag) + '\')">[' + escapeHtml(projTag) + ']</span> ' +
+                item.kind.toUpperCase() +
+              '</div>' +
+              '<pre style="background: rgba(0,0,0,0.2); padding: 6px; border-radius: 4px; font-family: monospace; font-size: 11px; max-height: 100px; overflow: auto; color: var(--text-dim); border: 1px solid rgba(255,255,255,0.03);">' + JSON.stringify(item.details, null, 2) + '</pre>' +
+            '</div>';
+          }).join('') + '</div>';
+        }
+
+        container.innerHTML = html;
       }
     }
 
@@ -1295,7 +1544,16 @@
     function renderApprovalButtons(m) {
       if (!m.approvalId) return '';
       if (m.approvalStatus === 'approved' || m.approvalStatus === 'denied') {
-        return '<div style="margin-top: 8px; font-size: 11px; color: var(--text-dim); font-weight: bold; text-transform: uppercase;">[ ' + m.approvalStatus + ' ]</div>';
+        var statusLabel = m.approvalStatus;
+        if (m.approvalStatus === 'approved') {
+          if (m.approvedBy === 'auto') statusLabel = 'auto-approved';
+          else if (m.approvedBy === 'agent') statusLabel = 'approved via agent';
+          else if (m.approvedBy === 'user') statusLabel = 'approved local';
+        } else if (m.approvalStatus === 'denied') {
+          if (m.approvedBy === 'agent') statusLabel = 'denied via agent';
+          else if (m.approvedBy === 'user') statusLabel = 'denied local';
+        }
+        return '<div style="margin-top: 8px; font-size: 11px; color: var(--text-dim); font-weight: bold; text-transform: uppercase;">[ ' + statusLabel + ' ]</div>';
       }
       return '<div style="margin-top: 8px; display: flex; gap: 6px;">' +
         '<button class="secondary" style="padding: 4px 8px; font-size: 11px; width: auto;" onclick="handleApprovalAction(\'' + m.approvalId + '\', \'approve\', false)">Approve</button>' +
@@ -1384,11 +1642,16 @@
 
 
     async function sendChat() {
+      const selectorVal = document.getElementById('chat-project-selector').value;
+      if (selectorVal === 'global' || selectorVal === 'Global Scope') {
+        alert('Global scope is monitor-only. Please select a project or conversation to message the agent.');
+        return;
+      }
+
       const input = document.getElementById('chat-input');
       const text = input.value.trim();
       if (!text) return;
       
-      const selectorVal = document.getElementById('chat-project-selector').value;
       // Parse project::conversationId format
       let projectStr = 'global';
       let convoId = null;
@@ -1413,7 +1676,14 @@
     function saveSenderAlias(val) {
         localStorage.setItem('senderAlias', val || 'Mobile');
     }
-    function sendQuick(text) { document.getElementById('chat-input').value = text; sendChat(); }
+    function sendQuick(text) { 
+      const selectorVal = document.getElementById('chat-project-selector').value;
+      if (selectorVal === 'global' || selectorVal === 'Global Scope') {
+        return;
+      }
+      document.getElementById('chat-input').value = text; 
+      sendChat(); 
+    }
     function sendRetry() {
         // First try the visible chat thread
         const msgs = document.querySelectorAll('#chat-thread .msg.user div:last-child');
