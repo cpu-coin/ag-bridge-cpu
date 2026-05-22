@@ -443,7 +443,9 @@ async function internalPoke(target, messageContent) {
                         tell application "System Events"
                             tell process "${appName}"
                                 set frontmost to true
-                                delay 0.1
+                                delay 0.2
+                                keystroke "l" using command down
+                                delay 0.3
                                 keystroke "${safeMsg}"
                                 delay 0.1
                                 keystroke return
@@ -460,19 +462,21 @@ async function internalPoke(target, messageContent) {
                                         click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${projTarget}")
                                         set frontmost to true
                                         set foundWindow to true
-                                        delay 0.1
+                                        delay 0.2
                                     on error
                                         try
                                             click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${fallbackTarget}")
                                             set frontmost to true
                                             set foundWindow to true
-                                            delay 0.1
+                                            delay 0.2
                                         on error
                                             set foundWindow to false
                                         end try
                                     end try
                                     
                                     if foundWindow then
+                                        keystroke "l" using command down
+                                        delay 0.3
                                         keystroke "${safeMsg}"
                                         delay 0.1
                                         keystroke return
