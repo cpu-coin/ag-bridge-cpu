@@ -60,7 +60,8 @@ async function runPokeScript() {
 
     // 2. Build combined message text
     const msgText = pendingMsgs.map(m => m.text).join('\n\n')
-        + `\n\n<system_note>Important: The user sent this message from the [${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status {"state": "working", "task": "..."}. Do not just reply in the local chat panel.</system_note>`;
+        + `\n\n<system_note>Important: The user sent this message from the [${finalProjectName}] workspace. You MUST restrict your actions to this project. Ignore your active document metadata if it belongs to a different project. Send your response using the mobile_respond MCP tool. Provide regular status updates using http://127.0.0.1:8787/agent/status with body {"state": "working", "task": "brief description of what you are doing", "project": "${finalProjectName}"}. Do not just reply in the local chat panel.</system_note>`;
+
 
     log('POKE', `Delivering ${pendingMsgs.length} messages (${msgText.length} chars) for project: ${finalProjectName}`);
 
@@ -125,12 +126,11 @@ async function runPokeScript() {
         log('POKE', `CDP notify error (non-fatal): ${e.message}`);
     }
 
-    // Update agent status
+    // Update agent status — scoped to the project that was just poked
     if (delivered) {
-        STATE.agent.state = 'working';
-        STATE.agent.lastSeen = new Date().toISOString();
+        updateAgentProject(finalProjectName, { state: 'working' });
         saveState();
-        broadcast('agent_status', STATE.agent);
+        broadcast('agent_status', { ...STATE.agent, project: finalProjectName });
         stopRetry();
     }
 
@@ -232,6 +232,36 @@ let TOKENS = new Set(); // Loaded from STATE.tokens
 // When true, incoming approval requests are auto-approved without waiting for
 // a human decision. The Maitrix panel toggle writes this via POST /config/autonomous.
 let AUTONOMOUS_MODE = false;
+
+// Per-project agent state — ephemeral, never persisted.
+// Keyed by project name (e.g. 'ag_bridge'). The agent POSTs to /agent/status
+// with { state, task, note, project } so each workspace gets its own current task.
+// The dashboard GET /agent/status uses STATE.targetProject to return the right one.
+let AGENT_BY_PROJECT = {}; // { 'ag_bridge': { state, task, note, lastSeen }, ... }
+
+function updateAgentProject(project, patch) {
+    const key = project && project !== 'global' ? project : '__global__';
+    const existing = AGENT_BY_PROJECT[key] || { state: 'idle', task: '', note: '', lastSeen: null };
+    AGENT_BY_PROJECT[key] = {
+        ...existing,
+        ...patch,
+        lastSeen: new Date().toISOString(),
+    };
+    // Also keep the global STATE.agent in sync for legacy consumers
+    STATE.agent = { ...STATE.agent, ...patch, lastSeen: AGENT_BY_PROJECT[key].lastSeen };
+    return AGENT_BY_PROJECT[key];
+}
+
+function getAgentStateForTarget() {
+    // Resolve the currently selected target project name
+    let key = '__global__';
+    if (STATE.targetProject) {
+        if (typeof STATE.targetProject === 'string') key = STATE.targetProject;
+        else key = STATE.targetProject.projectName || STATE.targetProject.title || '__global__';
+    }
+    // Return project-scoped state if we have it, otherwise fall back to global
+    return AGENT_BY_PROJECT[key] || AGENT_BY_PROJECT['__global__'] || STATE.agent;
+}
 
 let cachedProductType = null; // null = not yet detected
 
@@ -912,26 +942,47 @@ app.post('/messages/:id/ack', checkAuth, (req, res) => {
     res.json({ ok: true });
 });
 
-// POST /agent/heartbeat
-app.post('/agent/heartbeat', checkAuth, (req, res) => {
-    const { state, task, note } = req.body;
+// POST /agent/heartbeat — called programmatically by agent tooling
+// POST /agent/status   — called by the system prompt injected into the IDE
+// Both accept: { state, task, note, project }
+// 'project' tags which workspace this update belongs to.
+function handleAgentUpdate(req, res) {
+    const { state, task, note, project } = req.body;
 
-    STATE.agent = {
-        ...STATE.agent,
-        lastSeen: new Date().toISOString(),
-        state: state || STATE.agent.state,
-        task: task !== undefined ? task : STATE.agent.task,
-        note: note !== undefined ? note : STATE.agent.note
-    };
+    // Resolve the project name from the body, or fall back to current target
+    const targetKey = project
+        || (STATE.targetProject && (STATE.targetProject.projectName || STATE.targetProject.title))
+        || '__global__';
+
+    const updated = updateAgentProject(targetKey, {
+        state: state || undefined,
+        task: task !== undefined ? task : undefined,
+        note: note !== undefined ? note : undefined,
+    });
+
     saveState();
+    broadcast('agent_status', { ...updated, project: targetKey });
+    res.json({ ok: true, agent: { ...updated, project: targetKey } });
+}
 
-    broadcast('agent_status', STATE.agent);
-    res.json({ ok: true, agent: STATE.agent });
-});
+app.post('/agent/heartbeat', checkAuth, handleAgentUpdate);
+app.post('/agent/status',    checkAuth, handleAgentUpdate);
 
-// GET /agent/status
+// GET /agent/status — returns task scoped to the currently selected target project
 app.get('/agent/status', checkAuth, (req, res) => {
-    res.json({ ok: true, agent: { ...STATE.agent, product: cachedProductType, autonomousMode: AUTONOMOUS_MODE } });
+    const scoped = getAgentStateForTarget();
+    const targetKey = STATE.targetProject
+        ? (STATE.targetProject.projectName || STATE.targetProject.title || null)
+        : null;
+    res.json({
+        ok: true,
+        agent: {
+            ...scoped,
+            project: targetKey,
+            product: cachedProductType,
+            autonomousMode: AUTONOMOUS_MODE
+        }
+    });
 });
 
 // GET /projects
