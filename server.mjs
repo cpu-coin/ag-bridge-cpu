@@ -186,8 +186,13 @@ async function tryPoke(isRetry = false) {
         // runPokeScript already handles agent state and stopRetry
     } else {
         log('POKE', 'Delivery failed', res);
-        // Don't retry if MemFlow is working — the message is persisted there
-        stopRetry();
+        if (res.error === 'all_delivery_failed' || res.error === 'fatal_error') {
+            log('POKE', 'Message could not be delivered to MemFlow or IDE. Starting retry loop...');
+            startRetry();
+        } else {
+            // Don't retry if MemFlow is working — the message is persisted there
+            stopRetry();
+        }
     }
 }
 
@@ -221,6 +226,34 @@ let STATE = {
 // Ephemeral State
 let PAIRING_CODE = generateCode();
 let TOKENS = new Set(); // Loaded from STATE.tokens
+
+let cachedProductType = 'ide';
+
+async function updateCachedProductType() {
+    try {
+        const targets = await getAllTargets();
+        if (targets && targets.length > 0) {
+            const targetProj = STATE.targetProject;
+            const targetProjName = typeof targetProj === 'string' ? targetProj : (targetProj?.projectName || targetProj?.title);
+            if (targetProjName && targetProjName !== 'global') {
+                const match = targets.find(t => t.projectName === targetProjName || (t.title && t.title.includes(targetProjName)));
+                if (match && match.productType) {
+                    cachedProductType = match.productType;
+                    return;
+                }
+            }
+            const withType = targets.find(t => t.productType);
+            if (withType) {
+                cachedProductType = withType.productType;
+                return;
+            }
+        }
+    } catch (e) {
+        log('PRODUCT_DETECT', 'Error updating product type:', e.message);
+    }
+}
+updateCachedProductType();
+setInterval(updateCachedProductType, 5000);
 
 // --- Helpers ---
 function generateCode() {
@@ -281,9 +314,13 @@ function getTailscaleInfo() {
 }
 
 function broadcast(event, payload) {
+    let finalPayload = payload;
+    if (event === 'agent_status') {
+        finalPayload = { ...payload, product: cachedProductType };
+    }
     const msg = JSON.stringify({
         event,
-        payload,
+        payload: finalPayload,
         ts: new Date().toISOString()
     });
     for (const client of wss.clients) {
@@ -835,7 +872,7 @@ app.post('/agent/heartbeat', checkAuth, (req, res) => {
 
 // GET /agent/status
 app.get('/agent/status', checkAuth, (req, res) => {
-    res.json({ ok: true, agent: STATE.agent });
+    res.json({ ok: true, agent: { ...STATE.agent, product: cachedProductType } });
 });
 
 // GET /projects
@@ -1066,7 +1103,8 @@ app.get('/status', requireAuth, (req, res) => {
         },
         agent: {
             state: STATE.agent.state,
-            last_seen: STATE.agent.lastSeen
+            last_seen: STATE.agent.lastSeen,
+            product: cachedProductType
         },
         server: {
             uptime: process.uptime(),

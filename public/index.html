@@ -217,6 +217,20 @@
     .agent-status.working { color: var(--warning); border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.1); }
     .agent-status.idle { color: var(--success); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.1); }
 
+    .product-status {
+      font-size: 10px; padding: 4px 10px; border-radius: 6px; font-weight: 700;
+      letter-spacing: 0.5px; border: 1px solid transparent; text-transform: uppercase;
+      transition: all 0.3s ease; display: inline-block;
+    }
+    .product-status.ide {
+      color: #38bdf8; background: rgba(56, 189, 248, 0.1); border-color: rgba(56, 189, 248, 0.3);
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.15);
+    }
+    .product-status.vibe {
+      color: #ec4899; background: rgba(236, 72, 153, 0.1); border-color: rgba(236, 72, 153, 0.3);
+      box-shadow: 0 0 8px rgba(236, 72, 153, 0.15);
+    }
+
     /* Chat Area */
     .chat-container {
       height: 400px; overflow-y: auto; padding: 4px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px;
@@ -356,7 +370,8 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
         </button>
         <span id="active-tab-label">Monitor</span>
-        <span id="agent-status-pill" class="agent-status" style="margin-left: auto;">Connecting...</span>
+        <span id="product-status-indicator" class="product-status ide" style="margin-left: auto; display: none;">IDE</span>
+        <span id="agent-status-pill" class="agent-status" style="margin-left: 8px;">Connecting...</span>
       </div>
     </div>
     <!-- pending-count hidden span kept for JS compat -->
@@ -647,6 +662,10 @@
             serverReachable = true;
             logEvent('Server reachable — reconnecting WS...');
             connectWS();
+          } else if (!wsConnected && (!WS || WS.readyState === WebSocket.CLOSED || WS.readyState === WebSocket.CLOSING)) {
+            // Force-heal silent WebSocket drops or zombie states
+            logEvent('WS stream inactive but server is reachable — self-healing WebSocket connection...');
+            connectWS();
           }
         } else { throw new Error('bad status'); }
       } catch (e) {
@@ -783,6 +802,17 @@
         const pill = document.getElementById('agent-status-pill');
         pill.innerText = `Agent: ${data.agent.state.toUpperCase()}`;
         pill.className = `agent-status ${data.agent.state}`;
+        
+        const prodIndicator = document.getElementById('product-status-indicator');
+        if (prodIndicator) {
+          if (data.agent.product) {
+            prodIndicator.innerText = data.agent.product.toUpperCase();
+            prodIndicator.className = `product-status ${data.agent.product.toLowerCase()}`;
+            prodIndicator.style.display = 'inline-block';
+          } else {
+            prodIndicator.style.display = 'none';
+          }
+        }
         
         const taskBlock = document.getElementById('agent-active-task');
         const taskLabel = document.getElementById('agent-task-label') || taskBlock.querySelector('strong');

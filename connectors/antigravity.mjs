@@ -5,28 +5,65 @@ export const CONNECTOR_NAME = 'Antigravity IDE';
 const STATIC_PORTS = [9000, 9001, 9002, 9003];
 
 // Dynamically discover Antigravity's CDP port (the upgrade uses --remote-debugging-port=0)
+async function getProductTypeForPid(pid) {
+    if (!pid) return 'ide';
+    try {
+        const { execSync } = await import('child_process');
+        const cmd = execSync(`ps -p ${pid} -o args=`, { encoding: 'utf8', timeout: 1000 }).trim();
+        if (cmd.includes('Antigravity IDE.app') || cmd.includes('antigravity-ide')) {
+            return 'ide';
+        } else if (cmd.includes('Antigravity.app') || cmd.includes('VibeCraft.app') || cmd.toLowerCase().includes('vibe')) {
+            return 'vibe';
+        }
+    } catch (e) {}
+    return 'ide';
+}
+
 async function discoverPorts() {
-    const ports = new Set(STATIC_PORTS);
+    const results = [];
+    // Always include static ports as default fallbacks
+    for (const p of STATIC_PORTS) {
+        results.push({ port: p, pid: null, productType: 'ide' });
+    }
+
     try {
         const { execSync } = await import('child_process');
         const out = execSync("lsof -i -nP 2>/dev/null | grep -i 'Antigravi' | grep 'LISTEN'", { encoding: 'utf8', timeout: 3000 });
-        const matches = out.matchAll(/:(\d+)\s+\(LISTEN\)/g);
-        for (const m of matches) {
-            ports.add(parseInt(m[1], 10));
+        const lines = out.split('\n');
+        for (const line of lines) {
+            const parts = line.trim().split(/\s+/);
+            if (parts.length >= 9) {
+                const pid = parseInt(parts[1], 10);
+                const name = parts[8];
+                const portMatch = name.match(/:(\d+)$/);
+                if (portMatch) {
+                    const port = parseInt(portMatch[1], 10);
+                    // Avoid duplicating static ports
+                    if (!STATIC_PORTS.includes(port)) {
+                        const productType = await getProductTypeForPid(pid);
+                        results.push({ port, pid, productType });
+                    }
+                }
+            }
         }
     } catch (e) { /* lsof not available or no results */ }
-    return [...ports];
+    return results;
 }
 
 function getJson(url) {
     return new Promise((resolve, reject) => {
-        http.get(url, (res) => {
+        const req = http.get(url, { timeout: 1500 }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 try { resolve(JSON.parse(data)); } catch (e) { reject(e); }
             });
-        }).on('error', reject);
+        });
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error("Request timeout"));
+        });
+        req.on('error', reject);
     });
 }
 
@@ -50,10 +87,10 @@ export function extractConversationId(url) {
 
 export async function getTargets() {
     const targets = [];
-    const ports = await discoverPorts();
-    for (const port of ports) {
+    const discovered = await discoverPorts();
+    for (const d of discovered) {
         try {
-            const list = await getJson(`http://127.0.0.1:${port}/json/list`);
+            const list = await getJson(`http://127.0.0.1:${d.port}/json/list`);
             for (const t of list) {
                 // Skip chrome extensions, service workers, diff workers, and blank pages
                 const url = t.url || '';
@@ -77,11 +114,13 @@ export async function getTargets() {
                         id: t.id,
                         title: title,
                         projectName: extractProjectName(title),
-                        port: port,
+                        port: d.port,
                         url: url,
                         webSocketDebuggerUrl: t.webSocketDebuggerUrl,
                         conversationId: extractConversationId(url),
-                        isConversation: url.includes('/c/')
+                        isConversation: url.includes('/c/'),
+                        pid: d.pid,
+                        productType: d.productType
                     });
                 }
             }
@@ -222,7 +261,7 @@ const makePokeExpression = (messageContent) => `(async () => {
     return { ok:true, method:"enter_fallback", submitFound: !!submit, submitDisabled: submit?.disabled ?? null };
 })()`;
 
-export async function poke(target, messageContent) {
+async function internalPoke(target, messageContent) {
     if (!target || !target.webSocketDebuggerUrl) {
         // Fallback to AppleScript on macOS if CDP is not available
         if (process.platform === 'darwin') {
@@ -281,7 +320,7 @@ export async function poke(target, messageContent) {
                                     else
                                         error "Target window not found"
                                     end if
-                                end tell
+                                End tell
                             end tell
                         `;
                     }
@@ -401,4 +440,49 @@ export async function poke(target, messageContent) {
     } finally {
         ws.close();
     }
+}
+
+export async function poke(target, messageContent) {
+    // Try the initial poke first
+    let result = await internalPoke(target, messageContent);
+    if (result.ok) return result;
+
+    // Connection or RPC failure — enter self-healing recovery flow
+    console.warn(`[POKE RECOVERY] Delivery failed: ${result.error || 'unknown'}. Re-scanning targets to self-heal...`);
+    
+    try {
+        const freshTargets = await getTargets();
+        if (freshTargets.length > 0) {
+            // Match the target by project folder name, window title, or url
+            const match = freshTargets.find(t => 
+                (target.projectName && t.projectName === target.projectName) || 
+                (target.title && t.title === target.title) || 
+                (target.url && t.url === target.url)
+            ) || freshTargets[0]; // fallback to the first active target
+
+            if (match && match.webSocketDebuggerUrl !== target.webSocketDebuggerUrl) {
+                console.log(`[POKE RECOVERY] Recovered active target on port ${match.port}. Retrying connection...`);
+                result = await internalPoke(match, messageContent);
+                if (result.ok) {
+                    console.log(`[POKE RECOVERY] Auto-recovery SUCCESS: Connection restored and delivered via port ${match.port}!`);
+                    return result;
+                }
+            }
+        }
+    } catch (err) {
+        console.error(`[POKE RECOVERY] Error during self-healing:`, err.message);
+    }
+
+    // Ultimate fallback: Try AppleScript on macOS
+    if (process.platform === 'darwin') {
+        console.log(`[POKE RECOVERY] CDP self-healing failed. Attempting AppleScript keystroke fallback...`);
+        const fallbackTarget = { ...target, webSocketDebuggerUrl: null };
+        const scriptResult = await internalPoke(fallbackTarget, messageContent);
+        if (scriptResult.ok) {
+            console.log(`[POKE RECOVERY] AppleScript fallback SUCCESS: Delivered command directly to editor.`);
+            return scriptResult;
+        }
+    }
+
+    return result;
 }
