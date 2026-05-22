@@ -40,6 +40,27 @@ export async function getRunningProductType() {
  *   file_Users_sean_Documents_projects_my_project
  * We decode path slugs back to the last folder segment (the project name).
  */
+
+/** 
+ * For cloud/remote workspaces (hex-hash workspace IDs), resolve the project
+ * folder name by checking which /projects/* directory the PID has open via lsof.
+ */
+async function resolveProjectNameForPid(pid) {
+    try {
+        const { execSync } = await import('child_process');
+        const out = execSync(
+            `/usr/sbin/lsof -p ${pid} -Fn 2>/dev/null | /usr/bin/grep '^n/Users' | /usr/bin/grep '/projects/' | /usr/bin/head -5`,
+            { encoding: 'utf8', timeout: 2000 }
+        );
+        for (const line of out.trim().split('\n').filter(Boolean)) {
+            const path = line.replace(/^n/, '');
+            const m = path.match(/\/projects\/([^/.][^/]*)/);
+            if (m && m[1] && !m[1].startsWith('.')) return m[1];
+        }
+    } catch (_) {}
+    return null;
+}
+
 async function getWorkspacesFromProcesses() {
     const workspaces = [];
     try {
@@ -47,6 +68,8 @@ async function getWorkspacesFromProcesses() {
         const out = execSync('ps ax -o pid=,args= 2>/dev/null', { encoding: 'utf8', timeout: 3000 });
         const lines = out.split('\n');
         const seen = new Set();
+        const hexResolvePromises = [];
+
         for (const line of lines) {
             // Only look at language server processes that belong to Antigravity IDE
             if (!line.includes('language_server_macos') && !line.includes('language_server_linux') && !line.includes('language_server_win')) continue;
@@ -54,6 +77,10 @@ async function getWorkspacesFromProcesses() {
 
             const workspaceMatch = line.match(/--workspace_id\s+(\S+)/);
             const portMatch = line.match(/--extension_server_port\s+(\d+)/);
+            const pidMatch = line.match(/^\s*(\d+)/);
+            const pid = pidMatch ? pidMatch[1] : null;
+
+            // No workspace_id = global conversation window (no project context) — skip
             if (!workspaceMatch) continue;
 
             const workspaceId = workspaceMatch[1];
@@ -80,15 +107,42 @@ async function getWorkspacesFromProcesses() {
                 // Replace any remaining leading/trailing underscores
                 if (projectName) projectName = projectName.replace(/^_+|_+$/g, '') || null;
             }
-            // Hex hashes are cloud/remote workspaces — skip unless no path slug is available
-            if (!projectName && /^[0-9a-f]{32,}$/i.test(workspaceId)) continue;
+
+            // Hex hashes = cloud/remote workspaces — resolve via lsof
+            const isHexHash = !projectName && /^[0-9a-f]{32,}$/i.test(workspaceId);
+            if (isHexHash && pid) {
+                const extensionPort = portMatch ? parseInt(portMatch[1], 10) : null;
+                hexResolvePromises.push(
+                    resolveProjectNameForPid(pid).then(resolved => {
+                        if (resolved) {
+                            workspaces.push({
+                                workspaceId,
+                                projectName: resolved,
+                                extensionPort,
+                                productType: 'ide',
+                                source: 'lsof_resolve',
+                            });
+                        }
+                        // If lsof resolve fails, silently skip — don't add unnamed entries
+                    })
+                );
+                continue; // Will be added asynchronously above
+            }
+
+            if (!projectName) continue; // Skip anything we can't name
 
             workspaces.push({
                 workspaceId,
-                projectName: projectName || workspaceId,
+                projectName,
                 extensionPort: portMatch ? parseInt(portMatch[1], 10) : null,
                 productType: 'ide',
+                source: 'process_scan',
             });
+        }
+
+        // Wait for all lsof resolutions
+        if (hexResolvePromises.length > 0) {
+            await Promise.allSettled(hexResolvePromises);
         }
     } catch (e) { /* process scan unavailable */ }
     return workspaces;
