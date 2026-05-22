@@ -31,15 +31,13 @@ sequenceDiagram
 - **Persistence**: `data/state.json` (Messages, Agent Status, Tokens), `data/approvals.json` (Approvals).
 - **Security**: LAN-only, Token-based Auth (Headers: `x-ag-token`).
 
-### 2. "The Poke" (`scripts/poke.mjs`)
-- **Role**: Remote wake-up mechanism for the Agent.
-- **Mechanism**: Connects to VS Code via Chrome DevTools Protocol (CDP) on port 9000.
-- **Logic**:
-  - Finds the "Launchpad" or "Workbench" target.
-  - Iterates execution contexts (iframes) to find the Chat UI.
-  - Checks if Agent is "busy" (Cancel button visible).
-  - If Idle: Injects "check inbox" and simulates submit.
-  - If Busy: Server schedules retries (backoff/loop).
+### 2. "The Poke" & Delivery Mechanisms (`connectors/`)
+- **Role**: Remote wake-up and delivery mechanism for the Agent.
+- **Mechanism**: Pluggable connector system (`index.mjs`) trying multiple pathways.
+- **Delivery Flow**:
+  1. **MemFlow (Primary)**: `memflow.mjs` directly writes the message to the local SQLite database (`~/.memflow/memflow.sqlite`). The Agent's normal preparation cycle automatically reads it. This bypasses the UI and CDP entirely.
+  2. **CDP (Secondary / Wake-up)**: `antigravity.mjs` connects to the IDE via Chrome DevTools Protocol. It automatically discovers the debugging port (matching the `Antigravity IDE` or `Antigravity` process), finds the correct chat UI execution context, and injects the message.
+  3. **AppleScript (Fallback)**: If CDP fails (e.g., cross-window environments), macOS AppleScript targets the process by name. It dynamically falls back from the new `"Antigravity IDE"` to the legacy `"Antigravity"` app to ensure backward compatibility.
 
 ### 3. MCP Server (`mcp-server.mjs`)
 - **Role**: The interface for the Agent to interact with the outside world.

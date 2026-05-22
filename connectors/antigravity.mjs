@@ -230,8 +230,6 @@ export async function poke(target, messageContent) {
                 const { execSync } = await import('child_process');
                 const safeMsg = messageContent.replace(/"/g, '\\"').replace(/\n/g, '\\n');
                 
-                // We target the Antigravity Desktop App environments directly
-                const appName = 'Antigravity'; 
                 const projTarget = target.title || target.id || '';
                 
                 let fallbackTarget = projTarget;
@@ -242,53 +240,62 @@ export async function poke(target, messageContent) {
                     fallbackTarget = parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
                 }
 
-                let script = `
-                    tell application "System Events"
-                        tell process "${appName}"
-                            set frontmost to true
-                            delay 0.1
-                            keystroke "${safeMsg}"
-                            delay 0.1
-                            keystroke return
-                        end tell
-                    end tell
-                `;
-
-                if (projTarget && projTarget !== 'global') {
-                    // Try to raise the specific project window. If it fails, do not keystroke into the wrong one!
-                    script = `
+                const scriptTemplate = (appName) => {
+                    let baseScript = `
                         tell application "System Events"
                             tell process "${appName}"
-                                set foundWindow to false
-                                try
-                                    click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${projTarget}")
-                                    set frontmost to true
-                                    set foundWindow to true
-                                    delay 0.1
-                                on error
+                                set frontmost to true
+                                delay 0.1
+                                keystroke "${safeMsg}"
+                                delay 0.1
+                                keystroke return
+                            end tell
+                        end tell
+                    `;
+
+                    if (projTarget && projTarget !== 'global') {
+                        baseScript = `
+                            tell application "System Events"
+                                tell process "${appName}"
+                                    set foundWindow to false
                                     try
-                                        click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${fallbackTarget}")
+                                        click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${projTarget}")
                                         set frontmost to true
                                         set foundWindow to true
                                         delay 0.1
                                     on error
-                                        set foundWindow to false
+                                        try
+                                            click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${fallbackTarget}")
+                                            set frontmost to true
+                                            set foundWindow to true
+                                            delay 0.1
+                                        on error
+                                            set foundWindow to false
+                                        end try
                                     end try
-                                end try
-                                
-                                if foundWindow then
-                                    keystroke "${safeMsg}"
-                                    delay 0.1
-                                    keystroke return
-                                else
-                                    error "Target window not found"
-                                end if
+                                    
+                                    if foundWindow then
+                                        keystroke "${safeMsg}"
+                                        delay 0.1
+                                        keystroke return
+                                    else
+                                        error "Target window not found"
+                                    end if
+                                end tell
                             end tell
-                        end tell
-                    `;
+                        `;
+                    }
+                    return baseScript;
+                };
+
+                try {
+                    // Try the new Antigravity IDE first
+                    execSync(`osascript -e '${scriptTemplate("Antigravity IDE")}'`);
+                } catch (e1) {
+                    // Fallback to the legacy Antigravity app
+                    execSync(`osascript -e '${scriptTemplate("Antigravity")}'`);
                 }
                 
-                execSync(`osascript -e '${script}'`);
                 return { ok: true, method: "applescript_fallback" };
             } catch (e) {
                 console.warn("[POKE] AppleScript fallback failed (needs Accessibility permissions in System Settings).", e.message);
