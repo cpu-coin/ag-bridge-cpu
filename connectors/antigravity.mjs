@@ -265,7 +265,18 @@ export async function getTargets() {
 
                 if (isWorkbench || isConversation || isLocalPage) {
                     const pName = extractProjectName(title);
-                    if (pName && seenProjects.has(pName)) continue; // dedupe with process scan
+                    // If process scan already found this project with port=null,
+                    // BACKFILL the CDP port onto the existing target (don't skip!)
+                    const existing = pName ? targets.find(tgt => tgt.projectName === pName && !tgt.port) : null;
+                    if (existing) {
+                        existing.port = d.port;
+                        existing.url = url;
+                        existing.webSocketDebuggerUrl = t.webSocketDebuggerUrl;
+                        existing.id = t.id;
+                        existing.source = 'process_scan+cdp';
+                        continue;
+                    }
+                    if (pName && seenProjects.has(pName)) continue; // true duplicate
                     if (pName) seenProjects.add(pName);
                     targets.push({
                         connectorId: CONNECTOR_ID,

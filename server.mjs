@@ -1824,44 +1824,95 @@ async function pollMemflowOutbox() {
 // Start polling when server starts
 memflowPollTimer = setInterval(pollMemflowOutbox, MEMFLOW_POLL_INTERVAL);
 
-// ── Delivery Receipt Sweeper ─────────────────────────────────────────────────
-// Every 10s, check MongoDB to see if the agent has picked up inbox messages.
-// Status lifecycle: new → sent (in MongoDB) → delivered (agent read) → responded
-const RECEIPT_SWEEP_INTERVAL = 10_000;
+// ── Delivery Reconciliation Sweeper ──────────────────────────────────────────
+// Runs every 10s. Handles three scenarios:
+//   1. QUEUED too long (status 'new', >15s) → force a poke to write to MongoDB
+//   2. SENT but not delivered (status 'sent', >30s) → re-scan CDP, try to wake agent
+//   3. DELIVERED check (status 'sent') → check MongoDB for agent pickup receipts
+// Status lifecycle: new → sent → delivered → responded
+const RECONCILE_INTERVAL = 10_000;
+const STALE_NEW_THRESHOLD  = 15_000;  // 15s: message stuck in 'new'
+const STALE_SENT_THRESHOLD = 30_000;  // 30s: agent hasn't picked up from MongoDB
 
-async function sweepDeliveryReceipts() {
+async function reconcileDelivery() {
+    const now = Date.now();
+    let dirty = false;
+
     try {
-        // Collect all messages that are 'sent' but not yet confirmed as 'delivered'
-        const sentMsgs = STATE.messages.filter(m =>
-            m.from === 'user' && m.status === 'sent' && m.memflowInboxId
+        // ── Phase 1: Rescue stuck 'new' messages (never made it to MongoDB) ──
+        const stuckNew = STATE.messages.filter(m =>
+            m.from === 'user' && m.status === 'new' &&
+            (now - new Date(m.createdAt).getTime()) > STALE_NEW_THRESHOLD
         );
-        if (sentMsgs.length === 0) return;
+        if (stuckNew.length > 0) {
+            log('RECONCILE', `${stuckNew.length} message(s) stuck in 'new' — forcing poke...`);
+            await tryPoke(true);  // Re-attempt full poke cycle
+            dirty = true;
+        }
 
-        const inboxIds = [...new Set(sentMsgs.map(m => m.memflowInboxId))];
-        const { read } = await memflowCheckReceipts(inboxIds);
+        // ── Phase 2: Re-scan CDP for 'sent' messages the agent hasn't picked up ──
+        const staleSent = STATE.messages.filter(m =>
+            m.from === 'user' && m.status === 'sent' && m.memflowInboxId &&
+            (now - new Date(m.createdAt).getTime()) > STALE_SENT_THRESHOLD
+        );
+        if (staleSent.length > 0) {
+            // Agent hasn't read from MongoDB yet — try waking it via CDP
+            const targets = await getAllTargets();
+            const projectsToWake = [...new Set(staleSent.map(m => m.targetId).filter(Boolean))];
+            const norm = (s) => (s || '').toLowerCase().replace(/[-_]/g, '-');
 
-        if (read.length === 0) return;
-
-        const readSet = new Set(read);
-        let updated = 0;
-        for (const m of sentMsgs) {
-            if (readSet.has(m.memflowInboxId)) {
-                m.status = 'delivered';
-                broadcast('message_ack', { id: m.id, status: 'delivered', receipt: '✓✓ Delivered' });
-                updated++;
+            for (const projName of projectsToWake) {
+                const target = targets.find(t =>
+                    t.port && (norm(t.projectName) === norm(projName) || (t.title && norm(t.title).includes(norm(projName))))
+                );
+                if (target) {
+                    log('RECONCILE', `Waking agent for '${projName}' via CDP port ${target.port}...`);
+                    const wakeMsg = `[System] You have unread mobile messages. Call mobile_read_inbox to process them.`;
+                    const result = await pokeTarget(target, wakeMsg, { project: projName, from: 'system', channel: 'work' });
+                    if (result.ok) {
+                        log('RECONCILE', `CDP wake SUCCESS for '${projName}' — agent should now read inbox`);
+                    } else {
+                        log('RECONCILE', `CDP wake failed for '${projName}': ${result.error || result.reason || 'unknown'}`);
+                    }
+                } else {
+                    log('RECONCILE', `No CDP port found for '${projName}' — agent must be prompted manually`);
+                }
             }
         }
 
-        if (updated > 0) {
-            saveState();
-            log('RECEIPT', `${updated} message(s) confirmed delivered to agent`);
+        // ── Phase 3: Check MongoDB for delivery receipts ──
+        const sentWithId = STATE.messages.filter(m =>
+            m.from === 'user' && m.status === 'sent' && m.memflowInboxId
+        );
+        if (sentWithId.length > 0) {
+            const inboxIds = [...new Set(sentWithId.map(m => m.memflowInboxId))];
+            const { read } = await memflowCheckReceipts(inboxIds);
+
+            if (read.length > 0) {
+                const readSet = new Set(read);
+                let updated = 0;
+                for (const m of sentWithId) {
+                    if (readSet.has(m.memflowInboxId)) {
+                        m.status = 'delivered';
+                        broadcast('message_ack', { id: m.id, status: 'delivered', receipt: '✓✓ Delivered' });
+                        updated++;
+                    }
+                }
+                if (updated > 0) {
+                    dirty = true;
+                    log('RECEIPT', `${updated} message(s) confirmed delivered to agent`);
+                }
+            }
         }
+
+        if (dirty) saveState();
     } catch (e) {
-        // Silent — receipt checking should never crash the server
+        // Silent — reconciliation should never crash the server
     }
 }
 
-setInterval(sweepDeliveryReceipts, RECEIPT_SWEEP_INTERVAL);
+setInterval(reconcileDelivery, RECONCILE_INTERVAL);
+
 
 // ── SMS / iMessage Alert Fallback ────────────────────────────────────────────
 // Uses osascript (macOS) to send iMessage when bridge delivery is broken.

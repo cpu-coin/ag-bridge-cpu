@@ -984,7 +984,18 @@
       } catch (e) { return null; }
     }
 
-    // --- Color Utilities ---
+    // --- Delivery Receipt Labels ---
+    function getReceiptLabel(status) {
+      switch (status) {
+        case 'new':       return '○ Queued';
+        case 'sent':      return '✓ Sent';
+        case 'poked':     return '✓ Sent';       // legacy compat
+        case 'delivered': return '✓✓ Delivered';
+        case 'responded': return '✓✓✓ Read';
+        default:          return '';
+      }
+    }
+
     // --- Color Utilities (deterministic, hash-based, persistent) ---
     // Colors are derived from a hash of the project name so they NEVER change.
     // Stored in localStorage to guarantee consistency across sessions.
@@ -1712,6 +1723,13 @@
         var labelStyle = 'color: ' + pColor + '; font-weight: 700;';
         var b64Text = btoa(unescape(encodeURIComponent(m.text)));
 
+        var receiptHtml = '';
+        if (m.from === 'user') {
+          var receiptText = getReceiptLabel(m.status);
+          var receiptColor = m.status === 'delivered' ? '#10b981' : m.status === 'responded' ? '#3b82f6' : 'var(--text-dim)';
+          receiptHtml = '<div id="receipt-' + m.id + '" style="text-align: right; font-size: 10px; color: ' + receiptColor + '; margin-top: 4px; opacity: 0.8;">' + receiptText + '</div>';
+        }
+
         return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="' + msgStyle + '">' +
           '<div class="msg-meta"><span style="' + labelStyle + '">' + senderLabel + '</span><span>' + time + '</span></div>' +
           '<div style="position: relative;">' +
@@ -1720,6 +1738,7 @@
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
             '</button>' +
           '</div>' +
+          receiptHtml +
           renderApprovalButtons(m) +
         '</div>';
       }).join('');
@@ -2033,6 +2052,16 @@
           }
           if (data.event === 'approval_decided') fetchApprovals();
           if (data.event === 'message_new') fetchMessages();
+          if (data.event === 'message_ack' && data.data) {
+            // Update receipt badge in-place (no full re-render needed)
+            var receiptEl = document.getElementById('receipt-' + data.data.id);
+            if (receiptEl) {
+              var rLabel = data.data.receipt || getReceiptLabel(data.data.status);
+              var rColor = data.data.status === 'delivered' ? '#10b981' : data.data.status === 'responded' ? '#3b82f6' : 'var(--text-dim)';
+              receiptEl.textContent = rLabel;
+              receiptEl.style.color = rColor;
+            }
+          }
           if (data.event === 'agent_status') fetchAgentStatus();
           if (data.event === 'ping_ack') {
             const rtt = Date.now() - _pingStart;
