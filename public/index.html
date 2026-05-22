@@ -594,6 +594,17 @@
         </button>
       </div>
 
+      <div class="glass-card" style="border-color: rgba(129, 140, 248, 0.3); margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <h3 style="color: #a78bfa;">🔐 Paired Devices</h3>
+          <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="fetchDevices()">Refresh</button>
+        </div>
+        <p style="font-size: 13px; margin-top: 4px; margin-bottom: 16px;">Review all paired mobile clients. Revoke access for devices you don't recognize.</p>
+        <div id="devices-list" style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="text-align:center; color:var(--text-dim); padding:20px; font-size: 13px;">Loading devices...</div>
+        </div>
+      </div>
+
       <div class="glass-card" style="border-color: rgba(244, 63, 94, 0.3);">
         <h3 style="color: var(--danger);">System Actions</h3>
         <p style="font-size: 13px; margin-top: 8px; margin-bottom: 16px;">Restart the bridge server if connections get stuck.</p>
@@ -834,7 +845,7 @@
       }
       if (tabId === 'tab-projects') fetchProjects();
       if (tabId === 'tab-queue') fetchApprovals();
-      if (tabId === 'tab-settings') fetchStatus();
+      if (tabId === 'tab-settings') { fetchStatus(); fetchDevices(); }
       // Recalculate scroll FAB for the new tab's thread
       setTimeout(updateScrollFab, 100);
     }
@@ -842,15 +853,38 @@
     async function jumpToProjectChat(targetId) {
       if (!targetId || targetId === 'global' || targetId === 'undefined') return;
       
-      const select = document.getElementById('project-select');
-      if (select) {
-          select.value = targetId;
+      // 1. Instant visual: switch tab + set selector immediately
+      const selector = document.getElementById('chat-project-selector');
+      if (selector) {
+        // Try to find the option (exact or normalized match)
+        const norm = (s) => (s || '').toLowerCase().replace(/[-_]/g, '-');
+        for (let i = 0; i < selector.options.length; i++) {
+          const val = selector.options[i].value;
+          if (val === targetId || norm(val) === norm(targetId) || norm(val.split('::')[0]) === norm(targetId)) {
+            selector.value = val;
+            break;
+          }
+        }
       }
       
-      const chatBtn = document.querySelector(`[onclick="switchTab('tab-chat', this)"]`);
-      if (chatBtn) {
-          await switchTab('tab-chat', chatBtn);
-      }
+      // Update project color instantly
+      var projColor = getProjectColor(targetId);
+      document.documentElement.style.setProperty('--primary', projColor);
+      document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+      
+      // Switch tab visually (skip the heavy fetchProjects inside switchTab)
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.getElementById('tab-chat').classList.add('active');
+      document.getElementById('nav-chat')?.classList.add('active');
+      const lbl = document.getElementById('active-tab-label');
+      if (lbl) lbl.textContent = 'Chat';
+      closeNav();
+      updateChatInputState();
+      
+      // 2. Background: tell server + load messages
+      api('/projects/select', 'POST', { project: targetId });
+      fetchMessages();
     }
 
     function showDashboard() {
@@ -942,34 +976,51 @@
       try {
         const res = await fetch(path, opts);
         if (res.status === 401) { logout(); return null; }
-        if (!res.ok) return null;
+        if (!res.ok) {
+          // Return error body for 4xx so callers can display specific messages
+          try { return await res.json(); } catch(e) { return null; }
+        }
         return res.json();
       } catch (e) { return null; }
     }
 
     // --- Color Utilities ---
-    const RAINBOW_COLORS = [
-      '#f43f5e', // Rose
-      '#f97316', // Orange
-      '#eab308', // Yellow
-      '#3b82f6', // Blue
-      '#a855f7', // Purple
-      '#ec4899', // Pink
-      '#06b6d4', // Cyan
-      '#6366f1', // Indigo
-    ];
-    var knownProjects = [];
+    // --- Color Utilities (deterministic, hash-based, persistent) ---
+    // Colors are derived from a hash of the project name so they NEVER change.
+    // Stored in localStorage to guarantee consistency across sessions.
     var projectColorMap = {};
+    (function loadPersistedColors() {
+      try {
+        var saved = localStorage.getItem('ag_project_colors');
+        if (saved) projectColorMap = JSON.parse(saved);
+      } catch(e) {}
+    })();
+
+    function hashString(str) {
+      // Simple djb2 hash → deterministic integer
+      var hash = 5381;
+      for (var i = 0; i < str.length; i++) {
+        hash = ((hash << 5) + hash) + str.charCodeAt(i);
+        hash = hash & hash; // Convert to 32-bit integer
+      }
+      return Math.abs(hash);
+    }
+
+    function projectNameToColor(name) {
+      // Generate a vibrant HSL color from the project name hash.
+      // Saturation 70-85%, Lightness 60-70% for consistently readable colors.
+      var h = hashString(name);
+      var hue = h % 360;
+      var sat = 70 + (h >> 8) % 16;   // 70-85%
+      var lit = 60 + (h >> 16) % 11;   // 60-70%
+      return 'hsl(' + hue + ', ' + sat + '%, ' + lit + '%)';
+    }
 
     function registerProject(name) {
       if (!name || name === 'global' || name === 'Global Scope') return;
-      if (knownProjects.indexOf(name) === -1) {
-        knownProjects.push(name);
-        knownProjects.sort();
-        projectColorMap = {};
-        for (var i = 0; i < knownProjects.length; i++) {
-          projectColorMap[knownProjects[i]] = RAINBOW_COLORS[i % RAINBOW_COLORS.length];
-        }
+      if (!projectColorMap[name]) {
+        projectColorMap[name] = projectNameToColor(name);
+        try { localStorage.setItem('ag_project_colors', JSON.stringify(projectColorMap)); } catch(e) {}
       }
     }
 
@@ -978,7 +1029,7 @@
         return '#10b981'; // Emerald/Green for Global
       }
       registerProject(projName);
-      return projectColorMap[projName] || RAINBOW_COLORS[0];
+      return projectColorMap[projName];
     }
     
     // --- Fetches ---
@@ -1069,14 +1120,18 @@
         var label = m.from === 'user' ? 'User &rarr; ' + escapeHtml(m.targetId || 'global') : 'Agent (' + escapeHtml(m.targetId || 'global') + ') &rarr; User';
         var time = new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
         var b64Text = btoa(unescape(encodeURIComponent(m.text)));
-        return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="margin-right: auto; margin-left: 0; max-width: 100%; border-bottom-left-radius: 4px; border-bottom-right-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);">' +
+        var clickable = m.targetId && m.targetId !== 'global' && m.targetId !== 'undefined';
+        var cardStyle = 'margin-right: auto; margin-left: 0; max-width: 100%; border-bottom-left-radius: 4px; border-bottom-right-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--glass-border);' + (clickable ? ' cursor: pointer; transition: border-color 0.15s, background 0.15s;' : '');
+        var onClickCard = clickable ? ' onclick="jumpToProjectChat(\'' + escapeHtml(m.targetId) + '\')"' : '';
+        var hoverAttr = clickable ? ' onmouseenter="this.style.borderColor=\'' + pColor + '40\'; this.style.background=\'rgba(255,255,255,0.08)\'" onmouseleave="this.style.borderColor=\'var(--glass-border)\'; this.style.background=\'rgba(255,255,255,0.05)\'"' : '';
+        return '<div class="msg ' + (m.from === 'agent' ? 'agent' : 'user') + '" style="' + cardStyle + '"' + onClickCard + hoverAttr + '>' +
           '<div class="msg-meta">' +
-            '<span style="color: ' + pColor + '; font-weight: bold; cursor: pointer; text-decoration: underline;" onclick="jumpToProjectChat(\'' + escapeHtml(m.targetId) + '\')">>' + label + '</span>' +
+            '<span style="color: ' + pColor + '; font-weight: bold;">' + label + '</span>' +
             '<span>' + time + '</span>' +
           '</div>' +
           '<div style="position: relative;">' +
             '<div style="margin-right: 24px; white-space: pre-wrap; word-wrap: break-word;">' + escapeHtml(m.text) + '</div>' +
-            '<button data-copy="' + b64Text + '" onclick="copyFromData(this)" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
+            '<button data-copy="' + b64Text + '" onclick="event.stopPropagation(); copyFromData(this)" style="position: absolute; right: -8px; top: 0; width: 28px; height: 28px; padding: 0; background: transparent; border: none; box-shadow: none; opacity: 0.5; cursor: pointer;">' +
               '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>' +
             '</button>' +
           '</div>' +
@@ -1789,6 +1844,119 @@
             alert('No previous message found. Send a message first.');
         }
     }
+    // --- Device Management ---
+    function timeAgo(isoStr) {
+      if (!isoStr) return 'Never';
+      const diff = Date.now() - new Date(isoStr).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return mins + 'm ago';
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return hrs + 'h ago';
+      const days = Math.floor(hrs / 24);
+      if (days < 30) return days + 'd ago';
+      return new Date(isoStr).toLocaleDateString();
+    }
+
+    function getDeviceIcon(ua) {
+      if (!ua || ua === 'unknown') return '📱';
+      if (ua.includes('iPhone')) return '📱';
+      if (ua.includes('iPad')) return '📱';
+      if (ua.includes('Android')) return '🤖';
+      if (ua.includes('Mac')) return '💻';
+      if (ua.includes('Windows')) return '🖥️';
+      if (ua.includes('Linux')) return '🐧';
+      return '📱';
+    }
+
+    async function fetchDevices() {
+      const data = await api('/admin/devices');
+      if (!data || !data.ok) return;
+      const container = document.getElementById('devices-list');
+      if (!container) return;
+
+      if (data.devices.length === 0) {
+        container.innerHTML = '<div style="text-align:center; color:var(--text-dim); padding:20px; font-size: 13px;">No paired devices.</div>';
+        return;
+      }
+
+      container.innerHTML = data.devices.map(function(d) {
+        const icon = getDeviceIcon(d.userAgent);
+        const statusColor = d.enabled ? 'var(--success)' : 'var(--danger)';
+        const statusLabel = d.enabled ? 'Active' : 'Revoked';
+        const isMe = d.isCurrentDevice;
+        const borderColor = isMe ? 'rgba(56, 189, 248, 0.4)' : d.enabled ? 'var(--glass-border)' : 'rgba(244, 63, 94, 0.3)';
+        const bgColor = isMe ? 'rgba(56, 189, 248, 0.06)' : d.enabled ? 'rgba(0,0,0,0.3)' : 'rgba(244, 63, 94, 0.04)';
+        const lastSeenInfo = d.lastSeenAt ? timeAgo(d.lastSeenAt) + (d.lastSeenFrom ? ' · ' + d.lastSeenFrom : '') : 'Never connected';
+        const claimedInfo = d.claimedAt ? new Date(d.claimedAt).toLocaleDateString() + (d.claimedFrom && d.claimedFrom !== 'unknown (pre-migration)' ? ' from ' + d.claimedFrom : '') : 'Unknown';
+
+        var actionsHtml = '';
+        if (isMe) {
+          actionsHtml = '<span style="font-size: 10px; color: var(--primary); background: rgba(56,189,248,0.15); padding: 3px 8px; border-radius: 6px; font-weight: 700; letter-spacing: 0.5px;">THIS DEVICE</span>';
+        } else if (d.enabled) {
+          actionsHtml = '<div style="display:flex; gap:6px; flex-wrap: wrap;">' +
+            '<button class="secondary" style="width:auto; padding:4px 10px; font-size:11px; border-radius:8px;" onclick="renameDevice(\'' + d.id + '\', \'' + escapeHtml(d.label).replace(/'/g, "\\\\'") + '\')">✏️ Rename</button>' +
+            '<button class="danger" style="width:auto; padding:4px 10px; font-size:11px; border-radius:8px;" onclick="revokeDevice(\'' + d.id + '\', \'' + escapeHtml(d.label).replace(/'/g, "\\\\'") + '\')">🚫 Revoke</button>' +
+          '</div>';
+        } else {
+          actionsHtml = '<div style="display:flex; gap:6px; flex-wrap: wrap;">' +
+            '<button class="success" style="width:auto; padding:4px 10px; font-size:11px; border-radius:8px;" onclick="enableDevice(\'' + d.id + '\')">✅ Re-enable</button>' +
+            '<button class="danger" style="width:auto; padding:4px 10px; font-size:11px; border-radius:8px;" onclick="deleteDevice(\'' + d.id + '\', \'' + escapeHtml(d.label).replace(/'/g, "\\\\'") + '\')">🗑️ Delete</button>' +
+          '</div>';
+        }
+
+        return '<div style="background:' + bgColor + '; border:1px solid ' + borderColor + '; border-radius:12px; padding:14px 16px; transition: all 0.2s;">' +
+          '<div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">' +
+            '<div style="font-size:24px; flex-shrink:0;">' + icon + '</div>' +
+            '<div style="flex:1; min-width:0;">' +
+              '<div style="font-weight:600; font-size:14px; display:flex; align-items:center; gap:8px;">' +
+                '<span style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + escapeHtml(d.label) + '</span>' +
+                '<span style="width:8px; height:8px; border-radius:50%; background:' + statusColor + '; box-shadow:0 0 6px ' + statusColor + '; flex-shrink:0;" title="' + statusLabel + '"></span>' +
+              '</div>' +
+              '<div style="font-size:11px; color:var(--text-dim); font-family:\'JetBrains Mono\',monospace; margin-top:3px;">Token: ' + escapeHtml(d.tokenPreview) + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-dim); margin-bottom:10px; padding-left:36px;">' +
+            '<div>📡 Last seen: <span style="color:var(--text);">' + lastSeenInfo + '</span></div>' +
+            '<div>📅 Paired: <span style="color:var(--text);">' + claimedInfo + '</span></div>' +
+          '</div>' +
+          '<div style="padding-left:36px;">' + actionsHtml + '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    async function revokeDevice(id, label) {
+      if (!confirm('Revoke access for "' + label + '"? This device will be disconnected immediately.')) return;
+      const res = await api('/admin/devices/' + id + '/revoke', 'POST');
+      if (res && res.error === 'cannot_revoke_self') {
+        alert('You cannot revoke your own active session.');
+        return;
+      }
+      fetchDevices();
+    }
+
+    async function enableDevice(id) {
+      await api('/admin/devices/' + id + '/enable', 'POST');
+      fetchDevices();
+    }
+
+    async function deleteDevice(id, label) {
+      if (!confirm('Permanently delete "' + label + '"? This cannot be undone.')) return;
+      const res = await api('/admin/devices/' + id, 'DELETE');
+      if (res && res.error === 'cannot_delete_self') {
+        alert('You cannot delete your own active session.');
+        return;
+      }
+      fetchDevices();
+    }
+
+    async function renameDevice(id, currentLabel) {
+      const newLabel = prompt('Enter new device label:', currentLabel);
+      if (!newLabel || newLabel.trim() === '' || newLabel.trim() === currentLabel) return;
+      await api('/admin/devices/' + id + '/rename', 'POST', { label: newLabel.trim() });
+      fetchDevices();
+    }
+
     async function restartServer() {
         if (confirm("Are you sure you want to restart the AG Bridge server?")) {
             await api('/admin/restart', 'POST');

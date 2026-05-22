@@ -85,13 +85,13 @@ export async function writeInboxMessage(text, metadata = {}) {
             scope: 'workspace',
         },
         kind: 'knowledge',
-        tags: ['ag_bridge', 'inbox', 'unread', project],
+        tags: ['ag_bridge', 'inbox', 'pending', project],
         metadata: {
             msgId,
             from:       metadata.from || 'user',
             to:         'agent',
             channel:    metadata.channel || 'work',
-            status:     'unread',
+            status:     'pending',
             project,
             timestamp:  now,
         },
@@ -231,6 +231,35 @@ export async function writeResponse(text, metadata = {}) {
     );
 
     return { ok: true, method: 'memflow_mongodb', id: msgId };
+}
+
+// ── Delivery Receipts (sweeper — confirm agent picked up inbox messages) ──────
+
+/**
+ * Check which inbox messages the agent has picked up (tag swapped from "pending" → "read").
+ * Pass an array of msgIds we wrote to the inbox. Returns which ones the agent has read.
+ */
+export async function checkInboxReceipts(msgIds) {
+    if (!msgIds || msgIds.length === 0) return { read: [], pending: [] };
+    try {
+        const col = await getCollection();
+        // Find docs that WERE our inbox messages but no longer have "pending" tag
+        // (the MCP mobile_read_inbox tool swaps "pending" → "read")
+        const readDocs = await col.find({
+            'coordinates.namespace': INBOX_NAMESPACE,
+            id: { $in: msgIds },
+            tags: { $nin: ['pending'] },  // agent removed the "pending" tag
+        }).project({ id: 1 }).toArray();
+
+        const readIds = new Set(readDocs.map(d => d.id));
+        return {
+            read: msgIds.filter(id => readIds.has(id)),
+            pending: msgIds.filter(id => !readIds.has(id)),
+        };
+    } catch (e) {
+        console.error('[MEMFLOW] checkInboxReceipts error:', e.message);
+        return { read: [], pending: msgIds };
+    }
 }
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────

@@ -232,7 +232,7 @@ export async function getTargets() {
             id: ws.workspaceId,
             title: ws.projectName,
             projectName: ws.projectName,
-            port: null,                    // No CDP port — delivery via MemFlow/AppleScript
+            port: null,                    // No CDP port — delivery via MemFlow only
             url: null,
             webSocketDebuggerUrl: null,
             conversationId: null,
@@ -422,89 +422,11 @@ const makePokeExpression = (messageContent) => `(async () => {
 
 async function internalPoke(target, messageContent) {
     if (!target || !target.webSocketDebuggerUrl) {
-        // Fallback to AppleScript on macOS if CDP is not available
-        if (process.platform === 'darwin') {
-            try {
-                const { execSync } = await import('child_process');
-                const safeMsg = messageContent.replace(/"/g, '\\"').replace(/\n/g, '\\n');
-                
-                const projTarget = target.title || target.id || '';
-                
-                let fallbackTarget = projTarget;
-                if (projTarget.includes(' — ')) {
-                    fallbackTarget = projTarget.split(' — ')[0].trim();
-                } else if (projTarget.includes(' - ')) {
-                    const parts = projTarget.split(' - ');
-                    fallbackTarget = parts.length > 1 ? parts[parts.length - 2].trim() : parts[0].trim();
-                }
-
-                const scriptTemplate = (appName) => {
-                    let baseScript = `
-                        tell application "System Events"
-                            tell process "${appName}"
-                                set frontmost to true
-                                delay 0.2
-                                keystroke "l" using command down
-                                delay 0.3
-                                keystroke "${safeMsg}"
-                                delay 0.1
-                                keystroke return
-                            end tell
-                        end tell
-                    `;
-
-                    if (projTarget && projTarget !== 'global') {
-                        baseScript = `
-                            tell application "System Events"
-                                tell process "${appName}"
-                                    set foundWindow to false
-                                    try
-                                        click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${projTarget}")
-                                        set frontmost to true
-                                        set foundWindow to true
-                                        delay 0.2
-                                    on error
-                                        try
-                                            click (first menu item of menu 1 of menu bar item "Window" of menu bar 1 whose name contains "${fallbackTarget}")
-                                            set frontmost to true
-                                            set foundWindow to true
-                                            delay 0.2
-                                        on error
-                                            set foundWindow to false
-                                        end try
-                                    end try
-                                    
-                                    if foundWindow then
-                                        keystroke "l" using command down
-                                        delay 0.3
-                                        keystroke "${safeMsg}"
-                                        delay 0.1
-                                        keystroke return
-                                    else
-                                        error "Target window not found"
-                                    end if
-                                End tell
-                            end tell
-                        `;
-                    }
-                    return baseScript;
-                };
-
-                try {
-                    // Try the new Antigravity IDE first
-                    execSync(`osascript -e '${scriptTemplate("Antigravity IDE")}'`);
-                } catch (e1) {
-                    // Fallback to the legacy Antigravity app
-                    execSync(`osascript -e '${scriptTemplate("Antigravity")}'`);
-                }
-                
-                return { ok: true, method: "applescript_fallback" };
-            } catch (e) {
-                console.warn("[POKE] AppleScript fallback failed (needs Accessibility permissions in System Settings).", e.message);
-                return { ok: false, error: "applescript_fallback_failed", details: e.message };
-            }
-        }
-        return { ok: false, error: "cdp_not_found" };
+        // No CDP WebSocket available — do NOT fall back to AppleScript keystrokes.
+        // AppleScript keystroke injection is fundamentally unsafe: it types into
+        // whichever window happens to be focused, which can be a code editor.
+        // MemFlow is the primary delivery mechanism; CDP is just a notification layer.
+        return { ok: false, error: "cdp_not_available", details: "No WebSocket debugger URL. MemFlow handles delivery." };
     }
 
     let WebSocketClass = global.WebSocket;
@@ -637,16 +559,9 @@ export async function poke(target, messageContent) {
         console.error(`[POKE RECOVERY] Error during self-healing:`, err.message);
     }
 
-    // Ultimate fallback: Try AppleScript on macOS
-    if (process.platform === 'darwin') {
-        console.log(`[POKE RECOVERY] CDP self-healing failed. Attempting AppleScript keystroke fallback...`);
-        const fallbackTarget = { ...target, webSocketDebuggerUrl: null };
-        const scriptResult = await internalPoke(fallbackTarget, messageContent);
-        if (scriptResult.ok) {
-            console.log(`[POKE RECOVERY] AppleScript fallback SUCCESS: Delivered command directly to editor.`);
-            return scriptResult;
-        }
-    }
+    // No AppleScript fallback — it's fundamentally unsafe (keystroke injection
+    // into the wrong window corrupts source files). MemFlow is the sole delivery
+    // mechanism; CDP is an optional wake-up signal only.
 
     return result;
 }

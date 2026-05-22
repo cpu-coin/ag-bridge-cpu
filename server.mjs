@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse } from './connectors/index.mjs';
+import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse, memflowCheckReceipts } from './connectors/index.mjs';
 import { getRunningProductType } from './connectors/antigravity.mjs';
 
 const APP_VERSION = '2.0.0';
@@ -105,19 +105,25 @@ APPROVAL RULES (IMPORTANT — follow for every tool use that requires user permi
 
     // =====================================================
     // STEP 1: MemFlow Write (PRIMARY — this IS delivery)
+    // Write directly to MongoDB inbox — agent picks up via mobile_read_inbox MCP tool.
+    // DO NOT route through pokeTarget() — memflow has no CONNECTOR_ID/poke().
     // =====================================================
     try {
-        const mfResult = await pokeTarget({ connectorId: 'memflow' }, msgText, pokeMetadata);
+        const mfResult = await memflowReadInbox(msgText, {
+            ...pokeMetadata,
+            id: `inbox_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        });
         if (mfResult.ok) {
             delivered = true;
-            log('POKE', `MemFlow delivery: SUCCESS (${mfResult.method || 'sqlite'})`);
-            // Messages are DELIVERED — mark immediately
+            log('POKE', `MemFlow delivery: SUCCESS (${mfResult.method || 'mongodb'}) id=${mfResult.id}`);
+            // Messages written to MongoDB — mark as 'sent' and store the inbox ID for receipt tracking
             pendingMsgs.forEach(m => {
-                m.status = 'poked';
-                broadcast('message_ack', { id: m.id, status: 'poked' });
+                m.status = 'sent';
+                m.memflowInboxId = mfResult.id;  // Track for delivery receipt sweeper
+                broadcast('message_ack', { id: m.id, status: 'sent', receipt: '✓ Sent' });
             });
             saveState();
-            log('POKE', `Marked ${pendingMsgs.length} messages as poked via MemFlow.`);
+            log('POKE', `Marked ${pendingMsgs.length} messages as sent via MemFlow.`);
         } else {
             log('POKE', 'MemFlow delivery: write returned not ok', mfResult);
         }
@@ -264,12 +270,14 @@ let STATE = {
     agent: { state: 'idle', lastSeen: null, task: '', note: '' },
     checkpoints: [],
     tokens: [], // Changed from optional to persisted for UX stability
+    devices: [], // Rich device metadata: { id, token, label, claimedAt, claimedFrom, userAgent, lastSeenAt, lastSeenFrom, enabled }
     pairingCode: null
 };
 
 // Ephemeral State
 let PAIRING_CODE = generateCode();
-let TOKENS = new Set(); // Loaded from STATE.tokens
+let TOKENS = new Set(); // Quick-lookup set for auth checks (only enabled tokens)
+let DEVICES = []; // Full device objects — persisted as STATE.devices
 
 // Autonomous Mode — session-scoped only, resets to false on every server restart.
 // When true, incoming approval requests are auto-approved without waiting for
@@ -440,7 +448,8 @@ async function saveState() {
                 messages: STATE.messages,
                 agent: STATE.agent,
                 checkpoints: STATE.checkpoints,
-                tokens: Array.from(TOKENS),
+                tokens: Array.from(TOKENS), // Legacy compat: keep flat token list
+                devices: DEVICES, // Rich device metadata
                 pairingCode: STATE.pairingCode
             };
             const tempFile = `${STATE_FILE}.tmp`;
@@ -488,7 +497,26 @@ async function loadState() {
         if (Array.isArray(data.checkpoints)) STATE.checkpoints = data.checkpoints;
         if (Array.isArray(data.tokens)) {
             STATE.tokens = data.tokens;
-            TOKENS = new Set(data.tokens);
+            // Load rich device metadata (or migrate from flat tokens)
+            if (Array.isArray(data.devices) && data.devices.length > 0) {
+                DEVICES = data.devices;
+            } else {
+                // Migration: convert plain string tokens → device objects
+                log('PERSIST', `Migrating ${data.tokens.length} legacy tokens to device objects`);
+                DEVICES = data.tokens.map((tok, idx) => ({
+                    id: `dev_${crypto.randomBytes(4).toString('hex')}`,
+                    token: tok,
+                    label: `Device ${idx + 1} (migrated)`,
+                    claimedAt: new Date().toISOString(),
+                    claimedFrom: 'unknown (pre-migration)',
+                    userAgent: 'unknown',
+                    lastSeenAt: null,
+                    lastSeenFrom: null,
+                    enabled: true
+                }));
+            }
+            // Build TOKENS set from enabled devices only
+            TOKENS = new Set(DEVICES.filter(d => d.enabled).map(d => d.token));
         }
         if (data.pairingCode) {
             STATE.pairingCode = data.pairingCode;
@@ -624,6 +652,18 @@ const requireAuth = (req, res, next) => {
     if (!token || !TOKENS.has(token)) {
         return res.status(401).json({ error: 'Unauthorized' });
     }
+
+    // Track device usage metadata
+    const device = DEVICES.find(d => d.token === token);
+    if (device) {
+        device.lastSeenAt = new Date().toISOString();
+        device.lastSeenFrom = ip;
+        // Capture user agent on first real request if not already set
+        if (req.headers['user-agent'] && (!device.userAgent || device.userAgent === 'unknown')) {
+            device.userAgent = req.headers['user-agent'];
+        }
+    }
+
     req.authSource = 'user';
     next();
 };
@@ -634,7 +674,7 @@ const checkAuth = requireAuth; // Alias for consistency with new endpoints
 
 // Public
 app.get('/health', (req, res) => {
-    res.json({ ok: true, name: "ag_bridge", version: APP_VERSION, ts: new Date().toISOString() });
+    res.json({ ok: true, name: "ag-bridge-cpu", version: APP_VERSION, ts: new Date().toISOString() });
 });
 
 app.get('/debug/code', (req, res) => {
@@ -673,9 +713,30 @@ app.post('/pair/claim', (req, res) => {
     claimAttempts.delete(ip);
     
     const token = generateToken();
+    const ua = req.headers['user-agent'] || 'unknown';
+    const deviceLabel = ua.includes('iPhone') ? 'iPhone'
+        : ua.includes('iPad') ? 'iPad'
+        : ua.includes('Android') ? 'Android'
+        : ua.includes('Mac') ? 'Mac Browser'
+        : ua.includes('Windows') ? 'Windows Browser'
+        : 'Unknown Device';
+
+    const device = {
+        id: `dev_${crypto.randomBytes(4).toString('hex')}`,
+        token,
+        label: `${deviceLabel} (${new Date().toLocaleDateString()})`,
+        claimedAt: new Date().toISOString(),
+        claimedFrom: ip,
+        userAgent: ua,
+        lastSeenAt: new Date().toISOString(),
+        lastSeenFrom: ip,
+        enabled: true
+    };
+
+    DEVICES.push(device);
     TOKENS.add(token);
-    saveState(); // Save new token
-    console.log(`[AUTH] New device paired. Token created.`);
+    saveState(); // Save new device
+    console.log(`[AUTH] New device paired: ${device.id} (${device.label}) from ${ip}`);
     res.json({ token });
 });
 
@@ -1288,6 +1349,102 @@ app.get('/status', requireAuth, (req, res) => {
     });
 });
 
+// --- Device Management Endpoints ---
+
+// GET /admin/devices — list all paired devices (token masked)
+app.get('/admin/devices', checkAuth, (req, res) => {
+    const masked = DEVICES.map(d => ({
+        id: d.id,
+        label: d.label,
+        claimedAt: d.claimedAt,
+        claimedFrom: d.claimedFrom,
+        userAgent: d.userAgent,
+        lastSeenAt: d.lastSeenAt,
+        lastSeenFrom: d.lastSeenFrom,
+        enabled: d.enabled,
+        tokenPreview: d.token ? `${d.token.slice(0, 4)}…${d.token.slice(-4)}` : '?',
+        isCurrentDevice: d.token === req.headers['x-ag-token']
+    }));
+    res.json({ ok: true, devices: masked, total: masked.length });
+});
+
+// POST /admin/devices/:id/revoke — disable a token
+app.post('/admin/devices/:id/revoke', checkAuth, (req, res) => {
+    const device = DEVICES.find(d => d.id === req.params.id);
+    if (!device) return res.status(404).json({ error: 'not_found' });
+
+    // Prevent revoking your own token
+    if (device.token === req.headers['x-ag-token']) {
+        return res.status(400).json({ error: 'cannot_revoke_self', message: 'Cannot revoke your own active session.' });
+    }
+
+    device.enabled = false;
+    TOKENS.delete(device.token);
+    saveState();
+
+    // Force-close any WebSocket connections using this token
+    wss.clients.forEach(ws => {
+        if (ws._agToken === device.token) ws.terminate();
+    });
+
+    log('AUTH', `Device ${device.id} (${device.label}) REVOKED`);
+    res.json({ ok: true, device: { id: device.id, label: device.label, enabled: false } });
+});
+
+// POST /admin/devices/:id/enable — re-enable a revoked token
+app.post('/admin/devices/:id/enable', checkAuth, (req, res) => {
+    const device = DEVICES.find(d => d.id === req.params.id);
+    if (!device) return res.status(404).json({ error: 'not_found' });
+
+    device.enabled = true;
+    TOKENS.add(device.token);
+    saveState();
+
+    log('AUTH', `Device ${device.id} (${device.label}) RE-ENABLED`);
+    res.json({ ok: true, device: { id: device.id, label: device.label, enabled: true } });
+});
+
+// POST /admin/devices/:id/rename — set a friendly label
+app.post('/admin/devices/:id/rename', checkAuth, (req, res) => {
+    const device = DEVICES.find(d => d.id === req.params.id);
+    if (!device) return res.status(404).json({ error: 'not_found' });
+
+    const { label } = req.body;
+    if (!label || typeof label !== 'string' || label.trim().length === 0) {
+        return res.status(400).json({ error: 'invalid_label' });
+    }
+
+    device.label = label.trim().slice(0, 50); // Max 50 chars
+    saveState();
+
+    log('AUTH', `Device ${device.id} renamed to "${device.label}"`);
+    res.json({ ok: true, device: { id: device.id, label: device.label } });
+});
+
+// DELETE /admin/devices/:id — permanently remove a device
+app.delete('/admin/devices/:id', checkAuth, (req, res) => {
+    const idx = DEVICES.findIndex(d => d.id === req.params.id);
+    if (idx === -1) return res.status(404).json({ error: 'not_found' });
+
+    const device = DEVICES[idx];
+    // Prevent deleting your own token
+    if (device.token === req.headers['x-ag-token']) {
+        return res.status(400).json({ error: 'cannot_delete_self' });
+    }
+
+    TOKENS.delete(device.token);
+    DEVICES.splice(idx, 1);
+    saveState();
+
+    // Force-close any WebSocket connections using this token
+    wss.clients.forEach(ws => {
+        if (ws._agToken === device.token) ws.terminate();
+    });
+
+    log('AUTH', `Device ${device.id} (${device.label}) DELETED`);
+    res.json({ ok: true, deleted: device.id });
+});
+
 // POST /admin/restart
 // Exit with code 1 so launchd's KeepAlive restarts us automatically.
 // Do NOT use process.exit(0) (clean exit) — launchd won't restart on that.
@@ -1528,6 +1685,7 @@ server.on('upgrade', (request, socket, head) => {
     }
 
     wss.handleUpgrade(request, socket, head, (ws) => {
+        ws._agToken = token; // Tag socket for device-scoped disconnect on revoke
         wss.emit('connection', ws, request);
     });
 });
@@ -1658,13 +1816,52 @@ async function pollMemflowOutbox() {
     } catch (err) {
         // Silent fail — polling errors should not crash the server
         if (err.message && !err.message.includes('no such table')) {
-            log('MEMFLOW', `Poll error: ${err.message}`);
+        log('MEMFLOW', `Poll error: ${err.message}`);
         }
     }
 }
 
 // Start polling when server starts
 memflowPollTimer = setInterval(pollMemflowOutbox, MEMFLOW_POLL_INTERVAL);
+
+// ── Delivery Receipt Sweeper ─────────────────────────────────────────────────
+// Every 10s, check MongoDB to see if the agent has picked up inbox messages.
+// Status lifecycle: new → sent (in MongoDB) → delivered (agent read) → responded
+const RECEIPT_SWEEP_INTERVAL = 10_000;
+
+async function sweepDeliveryReceipts() {
+    try {
+        // Collect all messages that are 'sent' but not yet confirmed as 'delivered'
+        const sentMsgs = STATE.messages.filter(m =>
+            m.from === 'user' && m.status === 'sent' && m.memflowInboxId
+        );
+        if (sentMsgs.length === 0) return;
+
+        const inboxIds = [...new Set(sentMsgs.map(m => m.memflowInboxId))];
+        const { read } = await memflowCheckReceipts(inboxIds);
+
+        if (read.length === 0) return;
+
+        const readSet = new Set(read);
+        let updated = 0;
+        for (const m of sentMsgs) {
+            if (readSet.has(m.memflowInboxId)) {
+                m.status = 'delivered';
+                broadcast('message_ack', { id: m.id, status: 'delivered', receipt: '✓✓ Delivered' });
+                updated++;
+            }
+        }
+
+        if (updated > 0) {
+            saveState();
+            log('RECEIPT', `${updated} message(s) confirmed delivered to agent`);
+        }
+    } catch (e) {
+        // Silent — receipt checking should never crash the server
+    }
+}
+
+setInterval(sweepDeliveryReceipts, RECEIPT_SWEEP_INTERVAL);
 
 // ── SMS / iMessage Alert Fallback ────────────────────────────────────────────
 // Uses osascript (macOS) to send iMessage when bridge delivery is broken.
