@@ -295,18 +295,11 @@
     .quick-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-bottom: 4px; }
     .quick-btn { width: auto; font-size: 13px; padding: 8px 14px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 100px; box-shadow: none; flex: 1 1 calc(33.333% - 8px); min-width: 80px; text-align: center; }
 
-    .chat-layout-wrapper { display: flex; gap: 16px; align-items: stretch; }
+    .chat-layout-wrapper { display: flex; flex-direction: column; align-items: stretch; }
     .chat-main-area { flex: 1; display: flex; flex-direction: column; }
-    .quick-actions-sidebar { width: 140px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; justify-content: flex-start; border-left: 1px solid var(--glass-border); padding-left: 16px; }
-    .quick-actions-sidebar .sidebar-btn { width: 100%; margin: 0; padding: 8px 12px; font-size: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); color: var(--text); text-align: center; box-shadow: none; transition: all 0.2s; font-family: inherit; font-weight: 600; cursor: pointer; }
-    .quick-actions-sidebar .sidebar-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--primary); box-shadow: 0 0 8px var(--primary-glow); }
-    .quick-actions-sidebar .sidebar-btn:active { transform: translateY(1px); }
-    
-    @media (max-width: 480px) {
-      .chat-layout-wrapper { flex-direction: column; }
-      .quick-actions-sidebar { width: 100% !important; border-left: none !important; padding-left: 0 !important; flex-direction: row !important; flex-wrap: wrap; margin-top: 12px; }
-      .quick-actions-sidebar .sidebar-btn { flex: 1 1 calc(50% - 8px) !important; }
-    }
+    .mini-btn { padding: 6px 12px; font-size: 11px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); color: var(--text-dim); text-align: center; box-shadow: none; transition: all 0.2s; font-family: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .mini-btn:hover { background: rgba(255,255,255,0.08); border-color: var(--primary); color: var(--text); box-shadow: 0 0 8px var(--primary-glow); }
+    .mini-btn:active { transform: translateY(1px); }
 
     /* Projects Grid */
     .projects-grid {
@@ -460,10 +453,19 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
           <div id="active-project-banner" style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; flex: 1; margin-right: 8px; transition: all 0.3s ease;">
             <div id="active-project-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; transition: all 0.3s ease;"></div>
-            <div style="font-size: 13px; color: var(--text);">
+            <div style="font-size: 13px; color: var(--text); flex: 1;">
               <span style="color: var(--text-dim);">Target Workspace:</span> 
-              <select id="chat-project-selector" onchange="selectProject(this.value)" style="background: transparent; border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-weight: 600; padding: 4px 8px; border-radius: 6px; outline: none; max-width: 250px; margin-left: 6px; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; transition: all 0.3s ease;">
+              <select id="chat-project-selector" onchange="selectProject(this.value)" style="background: transparent; border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-weight: 600; padding: 4px 8px; border-radius: 6px; outline: none; max-width: 200px; margin-left: 6px; cursor: pointer; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; transition: all 0.3s ease;">
                 <option value="global" style="color: black;">Global Scope</option>
+              </select>
+            </div>
+            <div style="font-size: 13px; color: var(--text); margin-left: 10px; padding-left: 10px; border-left: 1px solid rgba(16, 185, 129, 0.3);">
+              <select id="chat-model-selector" onchange="changeModel(this.value)" style="background: transparent; border: 1px solid rgba(16, 185, 129, 0.4); color: #10b981; font-weight: 600; padding: 4px 8px; border-radius: 6px; outline: none; cursor: pointer;">
+                <option value="" disabled selected>Model Select...</option>
+                <option value="Claude 3.5 Sonnet">Claude 3.5 Sonnet</option>
+                <option value="Claude Opus">Claude Opus</option>
+                <option value="Gemini 1.5 Pro">Gemini 1.5 Pro</option>
+                <option value="Gemini 2.0 Pro">Gemini 2.0 Pro</option>
               </select>
             </div>
           </div>
@@ -486,17 +488,17 @@
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
               </button>
             </div>
-          </div>
-          <div class="quick-actions-sidebar">
-            <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px; text-align: center; margin-bottom: 4px;">Quick Actions</div>
-            <button class="sidebar-btn" onclick="sendQuick('Approve')">👍 Approve</button>
-            <button class="sidebar-btn" onclick="sendQuick('Reject')">👎 Reject</button>
-            <button class="sidebar-btn" onclick="sendQuick('CONTINUE')">Continue</button>
-            <button class="sidebar-btn" onclick="sendQuick('ABORT')">Abort</button>
-            <button class="sidebar-btn" onclick="sendRetry()">Retry Last</button>
-            <button class="sidebar-btn" onclick="sendQuick('STOP')">Stop</button>
-            <button class="sidebar-btn" onclick="sendQuick('STATUS')">Status</button>
-            <button class="sidebar-btn" onclick="sendQuick('Please summarize the last action/result')">Show Summary</button>
+            <!-- Condensed Quick Actions -->
+            <div id="quick-actions-container" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">
+              <button class="mini-btn" onclick="sendQuick('Approve')">👍 Approve</button>
+              <button class="mini-btn" onclick="sendQuick('Reject')">👎 Reject</button>
+              <button class="mini-btn" onclick="sendQuick('CONTINUE')">Continue</button>
+              <button class="mini-btn" onclick="sendQuick('ABORT')">Abort</button>
+              <button class="mini-btn" onclick="sendRetry()">Retry Last</button>
+              <button class="mini-btn" onclick="sendQuick('STOP')">Stop</button>
+              <button class="mini-btn" onclick="sendQuick('STATUS')">Status</button>
+              <button class="mini-btn" onclick="sendQuick('Please summarize the last action/result')">Summary</button>
+            </div>
           </div>
         </div>
       </div>
@@ -655,7 +657,8 @@
       
       const input = document.getElementById('chat-input');
       const sendBtn = document.querySelector('button[onclick="sendChat()"]');
-      const sidebar = document.querySelector('.quick-actions-sidebar');
+      const sidebar = document.getElementById('quick-actions-container');
+      const modelSelector = document.getElementById('chat-model-selector');
       let banner = document.getElementById('global-monitor-banner');
       
       if (isGlobal) {
@@ -664,6 +667,7 @@
           input.placeholder = "Global scope is monitor-only...";
         }
         if (sendBtn) sendBtn.disabled = true;
+        if (modelSelector) modelSelector.disabled = true;
         if (sidebar) {
           sidebar.style.pointerEvents = 'none';
           sidebar.style.opacity = '0.3';
@@ -704,6 +708,7 @@
           input.placeholder = "Message Antigravity...";
         }
         if (sendBtn) sendBtn.disabled = false;
+        if (modelSelector) modelSelector.disabled = false;
         if (sidebar) {
           sidebar.style.pointerEvents = 'auto';
           sidebar.style.opacity = '1';
@@ -1746,6 +1751,20 @@
       }
       document.getElementById('chat-input').value = text; 
       sendChat(); 
+    }
+    function changeModel(modelName) {
+      if (!modelName) return;
+      const selectorVal = document.getElementById('chat-project-selector').value;
+      if (selectorVal === 'global' || selectorVal === 'Global Scope') {
+        alert('Please select a project or conversation before changing the model.');
+        document.getElementById('chat-model-selector').selectedIndex = 0;
+        return;
+      }
+      document.getElementById('chat-input').value = 'Please switch your model to: ' + modelName;
+      sendChat();
+      setTimeout(function() {
+        document.getElementById('chat-model-selector').selectedIndex = 0;
+      }, 500);
     }
     function sendRetry() {
         // First try the visible chat thread
