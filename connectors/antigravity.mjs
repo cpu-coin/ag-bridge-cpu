@@ -4,7 +4,7 @@ export const CONNECTOR_ID = 'antigravity';
 export const CONNECTOR_NAME = 'Antigravity IDE';
 const STATIC_PORTS = [9000, 9001, 9002, 9003];
 
-// Dynamically discover Antigravity's CDP port (the upgrade uses --remote-debugging-port=0)
+// Dynamically detect product type by scanning running processes (no CDP required)
 async function getProductTypeForPid(pid) {
     if (!pid) return 'ide';
     try {
@@ -18,6 +18,82 @@ async function getProductTypeForPid(pid) {
     } catch (e) {}
     return 'ide';
 }
+
+/**
+ * Detect which Antigravity product is currently running by scanning process list.
+ * Returns 'ide' | 'vibe' | null (null = nothing running).
+ */
+export async function getRunningProductType() {
+    try {
+        const { execSync } = await import('child_process');
+        const out = execSync('ps -ax -o args= 2>/dev/null', { encoding: 'utf8', timeout: 2000 });
+        if (out.includes('Antigravity IDE.app') || out.includes('antigravity-ide')) return 'ide';
+        if (out.includes('VibeCraft.app') || out.includes('Antigravity.app/Contents')) return 'vibe';
+    } catch (e) {}
+    return null;
+}
+
+/**
+ * Read open workspace folder names from the Antigravity IDE language server
+ * processes. Each workspace gets a --workspace_id argument whose value is
+ * either a hex hash (for cloud workspaces) or a path slug like
+ *   file_Users_sean_Documents_projects_my_project
+ * We decode path slugs back to the last folder segment (the project name).
+ */
+async function getWorkspacesFromProcesses() {
+    const workspaces = [];
+    try {
+        const { execSync } = await import('child_process');
+        const out = execSync('ps ax -o pid=,args= 2>/dev/null', { encoding: 'utf8', timeout: 3000 });
+        const lines = out.split('\n');
+        const seen = new Set();
+        for (const line of lines) {
+            // Only look at language server processes that belong to Antigravity IDE
+            if (!line.includes('language_server_macos') && !line.includes('language_server_linux') && !line.includes('language_server_win')) continue;
+            if (!line.includes('Antigravity IDE')) continue;
+
+            const workspaceMatch = line.match(/--workspace_id\s+(\S+)/);
+            const portMatch = line.match(/--extension_server_port\s+(\d+)/);
+            if (!workspaceMatch) continue;
+
+            const workspaceId = workspaceMatch[1];
+            if (seen.has(workspaceId)) continue;
+            seen.add(workspaceId);
+
+            // Decode path slugs (file_Users_..._Documents_projects_my_project -> my_project)
+            // The slug encodes the full path with _ separators. We strip up to and including
+            // 'projects_' (or the deepest 'Documents_' prefix) to get the real folder name.
+            let projectName = null;
+            if (workspaceId.startsWith('file_')) {
+                const slug = workspaceId.replace(/^file_/, '');
+                // Try to find '_projects_' prefix and take everything after it
+                const projectsIdx = slug.lastIndexOf('_projects_');
+                if (projectsIdx !== -1) {
+                    projectName = slug.slice(projectsIdx + '_projects_'.length);
+                } else {
+                    // Fallback: strip common path prefixes then take what remains
+                    const cleaned = slug
+                        .replace(/^Users_[^_]+_/, '')          // strip Users/<username>/
+                        .replace(/^(Documents|Desktop|Developer)_/, ''); // strip common dirs
+                    projectName = cleaned || null;
+                }
+                // Replace any remaining leading/trailing underscores
+                if (projectName) projectName = projectName.replace(/^_+|_+$/g, '') || null;
+            }
+            // Hex hashes are cloud/remote workspaces — skip unless no path slug is available
+            if (!projectName && /^[0-9a-f]{32,}$/i.test(workspaceId)) continue;
+
+            workspaces.push({
+                workspaceId,
+                projectName: projectName || workspaceId,
+                extensionPort: portMatch ? parseInt(portMatch[1], 10) : null,
+                productType: 'ide',
+            });
+        }
+    } catch (e) { /* process scan unavailable */ }
+    return workspaces;
+}
+
 
 async function discoverPorts() {
     const results = [];
@@ -87,12 +163,38 @@ export function extractConversationId(url) {
 
 export async function getTargets() {
     const targets = [];
+    const seenProjects = new Set();
+
+    // ─── Layer 1: Language-server process scan (primary for Antigravity IDE) ───
+    // Antigravity IDE no longer exposes --remote-debugging-port, but each open
+    // workspace spawns a language_server process with --workspace_id that encodes
+    // the project folder path. We use this as the authoritative project list.
+    const workspaces = await getWorkspacesFromProcesses();
+    for (const ws of workspaces) {
+        if (seenProjects.has(ws.projectName)) continue;
+        seenProjects.add(ws.projectName);
+        targets.push({
+            connectorId: CONNECTOR_ID,
+            id: ws.workspaceId,
+            title: ws.projectName,
+            projectName: ws.projectName,
+            port: null,                    // No CDP port — delivery via MemFlow/AppleScript
+            url: null,
+            webSocketDebuggerUrl: null,
+            conversationId: null,
+            isConversation: false,
+            pid: null,
+            productType: ws.productType,
+            source: 'process_scan',
+        });
+    }
+
+    // ─── Layer 2: CDP / static port scan (legacy Antigravity / VibeCraft) ───
     const discovered = await discoverPorts();
     for (const d of discovered) {
         try {
             const list = await getJson(`http://127.0.0.1:${d.port}/json/list`);
             for (const t of list) {
-                // Skip chrome extensions, service workers, diff workers, and blank pages
                 const url = t.url || '';
                 const title = t.title || '';
                 if (url.includes('chrome-extension://') ||
@@ -103,24 +205,27 @@ export async function getTargets() {
                     url.includes('accounts.google.com') ||
                     (!title && !url)) continue;
 
-                // Accept workbench targets (legacy) AND conversation targets (v2.0 upgrade)
                 const isWorkbench = url.includes('workbench');
                 const isConversation = url.includes('/c/');
                 const isLocalPage = url.startsWith('file://') || url.startsWith('http://localhost') || url.startsWith('https://127.0.0.1');
 
                 if (isWorkbench || isConversation || isLocalPage) {
+                    const pName = extractProjectName(title);
+                    if (pName && seenProjects.has(pName)) continue; // dedupe with process scan
+                    if (pName) seenProjects.add(pName);
                     targets.push({
                         connectorId: CONNECTOR_ID,
                         id: t.id,
                         title: title,
-                        projectName: extractProjectName(title),
+                        projectName: pName,
                         port: d.port,
                         url: url,
                         webSocketDebuggerUrl: t.webSocketDebuggerUrl,
                         conversationId: extractConversationId(url),
                         isConversation: url.includes('/c/'),
                         pid: d.pid,
-                        productType: d.productType
+                        productType: d.productType,
+                        source: 'cdp',
                     });
                 }
             }

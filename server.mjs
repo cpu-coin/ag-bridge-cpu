@@ -9,6 +9,7 @@ import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse } from './connectors/index.mjs';
+import { getRunningProductType } from './connectors/antigravity.mjs';
 
 const APP_VERSION = '2.0.0';
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -227,7 +228,7 @@ let STATE = {
 let PAIRING_CODE = generateCode();
 let TOKENS = new Set(); // Loaded from STATE.tokens
 
-let cachedProductType = 'ide';
+let cachedProductType = null; // null = not yet detected
 
 async function updateCachedProductType() {
     try {
@@ -249,7 +250,14 @@ async function updateCachedProductType() {
             }
         }
     } catch (e) {
-        log('PRODUCT_DETECT', 'Error updating product type:', e.message);
+        log('PRODUCT_DETECT', 'Error scanning targets:', e.message);
+    }
+    // Fallback: check if any Antigravity product process is running directly
+    try {
+        const running = await getRunningProductType();
+        if (running) cachedProductType = running;
+    } catch (e) {
+        log('PRODUCT_DETECT', 'Error in process fallback:', e.message);
     }
 }
 updateCachedProductType();
