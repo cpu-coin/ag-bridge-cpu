@@ -346,6 +346,12 @@
     #event-log { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); max-height: 200px; overflow-y: auto; }
     .log-entry span { color: var(--primary); opacity: 0.8; margin-right: 8px; }
 
+    /* Scroll FAB */
+    .scroll-fab { position: fixed; bottom: 90px; right: 20px; z-index: 200; width: 40px; height: 40px; border-radius: 50%; background: rgba(30,30,30,0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.12); color: white; font-size: 18px; display: none; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.4); transition: transform 0.2s, opacity 0.2s, background 0.2s; opacity: 0.85; }
+    .scroll-fab:hover { transform: scale(1.12); opacity: 1; background: rgba(56,189,248,0.25); }
+    .scroll-fab:active { transform: scale(0.95); }
+    .scroll-fab.visible { display: flex; }
+
     /* Views */
     #pairing-view { height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
     a.credit-link { transition: all 0.2s ease-in-out; }
@@ -431,6 +437,9 @@
     </div>
     <!-- pending-count hidden span kept for JS compat -->
     <span id="pending-count" style="display:none">0</span>
+
+    <!-- Floating scroll FAB -->
+    <button id="scroll-fab" class="scroll-fab" onclick="scrollFabClick()" aria-label="Scroll to top/bottom">↓</button>
 
     <!-- Tab 0: Monitor -->
     <div id="tab-monitor" class="tab-content active">
@@ -589,9 +598,11 @@
       <!-- Credits & Ecosystem Card -->
       <div class="glass-card" style="border-color: rgba(129, 140, 248, 0.35); background: linear-gradient(135deg, rgba(129, 140, 248, 0.05) 0%, rgba(56, 189, 248, 0.05) 100%); margin-bottom: 16px; position: relative; overflow: hidden;">
         <div style="position: absolute; top: -30px; right: -30px; width: 80px; height: 80px; background: radial-gradient(circle, rgba(129, 140, 248, 0.2) 0%, transparent 70%); pointer-events: none;"></div>
-        <h3 style="background: linear-gradient(to right, #a855f7, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700; font-size: 18px; margin-bottom: 6px;">Ecosystem & Credits</h3>
-        <p style="font-size: 13px; margin-top: 8px; margin-bottom: 12px; line-height: 1.5; color: var(--text-dim);">
-          Antigravity works best with <strong style="color: var(--primary);">MemFlow</strong>, and is proud to be part of the <a href="https://cpucoin.io" target="_blank" style="color: #fff; text-decoration: none; border-bottom: 1px dotted var(--primary); font-weight: 600;">cpucoin.io</a> and <a href="https://equilibrium.com" target="_blank" style="color: #fff; text-decoration: none; border-bottom: 1px dotted var(--accent); font-weight: 600;">equilibrium.com</a> ecosystem.
+        <h3 style="background: linear-gradient(to right, #a855f7, #38bdf8); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 700; font-size: 18px; margin-bottom: 6px;">About Antigravity Mobile</h3>
+        <p style="font-size: 13px; margin-top: 8px; margin-bottom: 12px; line-height: 1.6; color: var(--text-dim);">
+          Antigravity Mobile works best in concert with
+          <a href="https://github.com/cpu-coin/memflow" target="_blank" style="color: var(--primary); text-decoration: none; border-bottom: 1px dotted var(--primary); font-weight: 700;">MemFlow</a>.
+          Special thanks to <strong style="color: #a78bfa;">ag_bridge</strong> for starting the foundation 🙏
         </p>
         
         <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; text-align: center; backdrop-filter: blur(4px);">
@@ -611,6 +622,13 @@
           <a href="https://maitrix.io" target="_blank" class="credit-link" style="color: var(--text-dim); font-size: 11px; text-decoration: none; padding: 5px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); font-family: 'JetBrains Mono', monospace; font-weight: 600;">maitrix.io</a>
           <a href="https://tweekit.io" target="_blank" class="credit-link" style="color: var(--text-dim); font-size: 11px; text-decoration: none; padding: 5px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); font-family: 'JetBrains Mono', monospace; font-weight: 600;">tweekit.io</a>
           <a href="https://equilibrium.com" target="_blank" class="credit-link" style="color: var(--text-dim); font-size: 11px; text-decoration: none; padding: 5px 10px; border-radius: 6px; background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); font-family: 'JetBrains Mono', monospace; font-weight: 600;">equilibrium.com</a>
+        </div>
+
+        <!-- License -->
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 10px; color: rgba(255,255,255,0.25); line-height: 1.6; text-align: center; font-family: 'JetBrains Mono', monospace;">
+          MIT License · © 2025 cpucoin.io contributors<br>
+          Origin: <a href="https://github.com/cpu-coin/ag_bridge_cpu" target="_blank" style="color: rgba(255,255,255,0.35); text-decoration: none; border-bottom: 1px dotted rgba(255,255,255,0.15);">cpu-coin/ag_bridge_cpu</a>
+          · MemFlow: <a href="https://github.com/cpu-coin/memflow" target="_blank" style="color: rgba(255,255,255,0.35); text-decoration: none; border-bottom: 1px dotted rgba(255,255,255,0.15);">cpu-coin/memflow</a>
         </div>
       </div>
 
@@ -809,6 +827,8 @@
       if (tabId === 'tab-projects') fetchProjects();
       if (tabId === 'tab-queue') fetchApprovals();
       if (tabId === 'tab-settings') fetchStatus();
+      // Recalculate scroll FAB for the new tab's thread
+      setTimeout(updateScrollFab, 100);
     }
 
     async function jumpToProjectChat(targetId) {
@@ -984,6 +1004,49 @@
     function smartScroll(el) {
       if (isNearBottom(el)) el.scrollTop = el.scrollHeight;
     }
+
+    // --- Scroll FAB: jump to top / bottom toggle ---
+    let _scrollFabTarget = null; // the currently active scrollable container
+    function getActiveThread() {
+      const monitorTab = document.getElementById('tab-monitor');
+      const chatTab = document.getElementById('tab-chat');
+      if (monitorTab && monitorTab.classList.contains('active')) return document.getElementById('monitor-thread');
+      if (chatTab && chatTab.classList.contains('active')) return document.getElementById('chat-thread');
+      return null;
+    }
+    function updateScrollFab() {
+      const fab = document.getElementById('scroll-fab');
+      const el = getActiveThread();
+      if (!fab || !el) { if (fab) fab.classList.remove('visible'); return; }
+      _scrollFabTarget = el;
+      // Only show if content is scrollable (overflow > 100px)
+      const isScrollable = el.scrollHeight - el.clientHeight > 100;
+      if (!isScrollable) { fab.classList.remove('visible'); return; }
+      fab.classList.add('visible');
+      // Toggle arrow direction: ↓ if near top, ↑ if near bottom
+      if (isNearBottom(el, 120)) {
+        fab.textContent = '\u2191'; // up arrow — jump to top
+      } else {
+        fab.textContent = '\u2193'; // down arrow — jump to bottom
+      }
+    }
+    function scrollFabClick() {
+      const el = _scrollFabTarget || getActiveThread();
+      if (!el) return;
+      if (isNearBottom(el, 120)) {
+        el.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      }
+    }
+    // Attach scroll listeners after DOM ready
+    setTimeout(function() {
+      ['monitor-thread', 'chat-thread'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.addEventListener('scroll', updateScrollFab, { passive: true });
+      });
+      updateScrollFab();
+    }, 500);
 
     function renderMonitor(msgs) {
       const thread = document.getElementById('monitor-thread');
