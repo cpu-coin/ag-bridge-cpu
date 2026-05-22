@@ -1024,9 +1024,23 @@ app.get('/agent/status', checkAuth, (req, res) => {
             project: targetKey,
             product: cachedProductType,
             autonomousMode: AUTONOMOUS_MODE
+        },
+        connection: {
+            wsClients: wss.clients.size,          // how many browsers are connected
+            mongodbPollActive: !!memflowPollTimer,  // is the MongoDB poll running?
+            lastPollSuccess: new Date(lastPollSuccess).toISOString()
         }
     });
 });
+
+// GET /ping/echo — round-trip test: server receives, broadcasts WS event back to all clients
+// The dashboard listens for 'ping_ack' and measures RTT.
+app.get('/ping/echo', checkAuth, (req, res) => {
+    const ts = Date.now();
+    broadcast('ping_ack', { ts, serverTime: new Date().toISOString(), wsClients: wss.clients.size });
+    res.json({ ok: true, ts, wsClients: wss.clients.size });
+});
+
 
 // GET /projects
 app.get('/projects', checkAuth, async (req, res) => {

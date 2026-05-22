@@ -554,6 +554,18 @@
         <button class="danger" onclick="logout()">Disconnect Device</button>
       </div>
 
+      <div class="glass-card" style="border-color: rgba(56,189,248,0.3); margin-bottom: 16px;">
+        <h3 style="color: #38bdf8;">📡 Connection Health</h3>
+        <p style="font-size: 13px; margin-top: 8px; margin-bottom: 16px;">Live status of the bridge connection and delivery pipeline.</p>
+        <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px;">
+          <div id="conn-clients" style="color: var(--text-dim);">⏳ Checking clients...</div>
+          <div id="conn-poll" style="color: var(--text-dim);">⏳ Checking MongoDB poll...</div>
+        </div>
+        <button id="ping-btn" onclick="pingEcho()" style="margin-top: 16px; background: rgba(56,189,248,0.15); border-color: rgba(56,189,248,0.3); color: #38bdf8; width: auto; padding: 8px 20px;">
+          🏓 Ping Test (HTTP + WS round-trip)
+        </button>
+      </div>
+
       <div class="glass-card" style="border-color: rgba(244, 63, 94, 0.3);">
         <h3 style="color: var(--danger);">System Actions</h3>
         <p style="font-size: 13px; margin-top: 8px; margin-bottom: 16px;">Restart the bridge server if connections get stuck.</p>
@@ -914,8 +926,40 @@
         } else {
           taskBlock.style.display = 'none';
         }
+
+        // Connection health display
+        if (data.connection) {
+          const connEl = document.getElementById('conn-clients');
+          const pollEl = document.getElementById('conn-poll');
+          if (connEl) {
+            const n = data.connection.wsClients;
+            connEl.innerText = n === 0 ? '🔴 No clients' : `🟢 ${n} client${n>1?'s':''} connected`;
+            connEl.style.color = n === 0 ? 'var(--warning)' : 'var(--success)';
+          }
+          if (pollEl) {
+            pollEl.innerText = data.connection.mongodbPollActive ? '🟢 MongoDB polling' : '🔴 Poll stopped';
+            pollEl.style.color = data.connection.mongodbPollActive ? 'var(--success)' : 'var(--danger)';
+          }
+        }
       }
     }
+
+    // Ping the server and verify WS round-trip
+    let _pingStart = 0;
+    async function pingEcho() {
+      _pingStart = Date.now();
+      const btn = document.getElementById('ping-btn');
+      if (btn) { btn.innerText = '⏳ Pinging...'; btn.disabled = true; }
+      const data = await api('/ping/echo');
+      if (!data) {
+        if (btn) { btn.innerText = '🔴 HTTP failed'; btn.disabled = false; }
+        logEvent('Ping: HTTP request failed');
+      } else {
+        logEvent(`Ping: HTTP OK — ${data.wsClients} WS client(s). Waiting for WS echo...`);
+        setTimeout(() => { if (btn) { btn.innerText = '🟡 WS echo timeout'; btn.disabled = false; } }, 3000);
+      }
+    }
+
 
     // --- Conversation state ---
     let selectedConversationId = null;
@@ -1455,6 +1499,18 @@
           if (data.event === 'approval_decided') fetchApprovals();
           if (data.event === 'message_new') fetchMessages();
           if (data.event === 'agent_status') fetchAgentStatus();
+          if (data.event === 'ping_ack') {
+            const rtt = Date.now() - _pingStart;
+            const btn = document.getElementById('ping-btn');
+            if (btn) { btn.innerText = `🟢 WS OK (${rtt}ms)`; btn.disabled = false; }
+            const connEl = document.getElementById('conn-clients');
+            if (connEl) {
+              const n = data.data?.wsClients ?? '?';
+              connEl.innerText = `🟢 ${n} client${n>1?'s':''} connected`;
+              connEl.style.color = 'var(--success)';
+            }
+            logEvent(`✅ WS round-trip confirmed: ${rtt}ms`);
+          }
         } catch (e) {}
       };
 
