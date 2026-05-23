@@ -148,19 +148,8 @@ APPROVAL RULES (IMPORTANT — follow for every tool use that requires user permi
             );
 
             if (!exactMatch) {
-                // No matching window found — try cross-window broadcast wake
-                const anyTarget = targets.find(t => t.port);
-                if (anyTarget) {
-                    log('POKE', `CDP notify: no window for '${finalProjectName}' — broadcasting to '${anyTarget.projectName || anyTarget.title}'`);
-                    const crossResult = await pokeTarget(anyTarget, msgText, pokeMetadata);
-                    if (crossResult.ok) {
-                        log('POKE', `CDP cross-window notify: SUCCESS via '${anyTarget.projectName || anyTarget.title}'`);
-                    } else {
-                        log('POKE', `CDP cross-window notify: ${crossResult.reason || crossResult.error || 'failed'} (non-fatal)`);
-                    }
-                } else {
-                    log('POKE', `CDP notify: no window for '${finalProjectName}' and no other IDE windows available`);
-                }
+                // No matching window found — do NOT fall back to targets[0] (wrong project)
+                log('POKE', `CDP notify: no window found for project '${finalProjectName}' — skipping to avoid cross-project delivery`);
             } else {
                 log('POKE', `CDP notify -> ${exactMatch.title || exactMatch.id} (port ${exactMatch.port})`);
                 const cdpResult = await pokeTarget(exactMatch, msgText, pokeMetadata);
@@ -1898,23 +1887,7 @@ async function reconcileDelivery() {
                         log('RECONCILE', `CDP wake failed for '${projName}': ${result.error || result.reason || 'unknown'}`);
                     }
                 } else {
-                    // ── Cross-window broadcast wake (Approach A) ──
-                    // No window matches this exact project, but another IDE window
-                    // might be open. Send the wake there — MemFlow inbox is global,
-                    // so any agent can call mobile_read_inbox and process the message.
-                    const anyTarget = targets.find(t => t.port);
-                    if (anyTarget) {
-                        log('RECONCILE', `No window for '${projName}' — broadcasting wake to '${anyTarget.projectName || anyTarget.title}' (cross-window fallback)`);
-                        const wakeMsg = `[System] You have unread mobile messages for project "${projName}". Call mobile_read_inbox to process them.`;
-                        const result = await pokeTarget(anyTarget, wakeMsg, { project: projName, from: 'system', channel: 'work' });
-                        if (result.ok) {
-                            log('RECONCILE', `Cross-window wake SUCCESS via '${anyTarget.projectName || anyTarget.title}' for '${projName}'`);
-                        } else {
-                            log('RECONCILE', `Cross-window wake failed: ${result.error || result.reason || 'unknown'}`);
-                        }
-                    } else {
-                        log('RECONCILE', `No CDP port found for '${projName}' and no other IDE windows available — agent must be prompted manually`);
-                    }
+                    log('RECONCILE', `No CDP port found for '${projName}' — agent must be prompted manually`);
                 }
             }
         }
