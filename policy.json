@@ -14,7 +14,9 @@
     "relaxed": {
       "description": "Allows almost everything except dangerous globals.",
       "allow": [
-        ".*"
+        ".*",
+        "^cd /Users/seanbarger_1/Documents/projects/maitrix-frontend-branch/android && \\.\\./scripts/run-fastlane\\.sh release$",
+        "^cd /Users/seanbarger_1/Documents/projects/maitrix-frontend-branch && \\./scripts/switch-env\\.sh prod && cd android && \\.\\./scripts/run-fastlane\\.sh release$"
       ],
       "deny": []
     },
@@ -31,7 +33,9 @@
         "^cd\\b",
         "^mkdir\\b",
         "^echo\\b",
-        "^git restore tasks/lessons\\.md && git add \\.env\\.maitrixfb src/version\\.json tasks/todo\\.md && git commit -m \"Commit changes\" && git push origin pre-email-base && git checkout main && git merge pre-email-base && git push origin main && git checkout pre-email-base$"
+        "^git restore tasks/lessons\\.md && git add \\.env\\.maitrixfb src/version\\.json tasks/todo\\.md && git commit -m \"Commit changes\" && git push origin pre-email-base && git checkout main && git merge pre-email-base && git push origin main && git checkout pre-email-base$",
+        "^cd eqnetwork-ios && fastlane stage$",
+        "^git push origin main$"
       ],
       "deny": []
     },
