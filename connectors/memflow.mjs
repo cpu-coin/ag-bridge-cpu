@@ -272,3 +272,28 @@ export async function close() {
         _col    = null;
     }
 }
+
+// ── Agent Registry (Strataflow / Phase 1) ────────────────────────────────────
+
+/**
+ * Retrieve agents that have sent a heartbeat in the last 5 minutes.
+ * @param {string} [project] Optional project filter
+ */
+export async function getActiveAgents(project) {
+    try {
+        if (!_db) await getCollection(); // ensure connected
+        const col = _db.collection('active_agents');
+        
+        const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+        const query = { lastSeenAt: { $gte: cutoff } };
+        if (project) {
+            query.project = project;
+        }
+
+        const agents = await col.find(query).toArray();
+        return agents;
+    } catch (e) {
+        console.error('[MEMFLOW] getActiveAgents error:', e.message);
+        return [];
+    }
+}

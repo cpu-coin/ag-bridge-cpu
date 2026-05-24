@@ -63,3 +63,4 @@ export const memflowMarkAsRead    = memflow.markMessagesRead;
 export const memflowWriteResponse = memflow.writeResponse;
 export const memflowReadInbox     = memflow.writeInboxMessage; // write to inbox so agent picks it up
 export const memflowCheckReceipts = memflow.checkInboxReceipts; // sweeper: check if agent read inbox msgs
+export const memflowGetActiveAgents = memflow.getActiveAgents; // Strataflow registry query

@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse, memflowCheckReceipts } from './connectors/index.mjs';
+import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse, memflowCheckReceipts, memflowGetActiveAgents } from './connectors/index.mjs';
 import { getRunningProductType } from './connectors/antigravity.mjs';
 
 const APP_VERSION = '2.0.0';
@@ -75,6 +75,37 @@ async function runPokeScript() {
         } else {
             finalProjectName = 'global';
         }
+    }
+
+    // =====================================================
+    // STRATAFLOW GATE: Project Confirmation & Validation
+    // =====================================================
+    const activeAgents = await memflowGetActiveAgents();
+    const activeProjects = [...new Set(activeAgents.map(a => a.project))];
+    const isTargetActive = activeAgents.some(a => a.project === finalProjectName);
+
+    if (finalProjectName !== 'global' && !isTargetActive) {
+        log('STRATAFLOW', `Target project '${finalProjectName}' is inactive. Intercepting message.`);
+        
+        const projectList = activeProjects.length > 0 
+            ? activeProjects.map(p => `- ${p}`).join('\n')
+            : "- (No active agents found in registry)";
+        
+        const gateMessage = `[Strataflow Gate] The target project '${finalProjectName}' is currently inactive or hasn't sent a heartbeat recently.\n\nWhich active project should handle this?\n${projectList}`;
+
+        await memflowWriteResponse(gateMessage, {
+            project: finalProjectName,
+            from: 'system',
+            channel: 'system'
+        });
+
+        // Mark messages as intercepted so they don't loop
+        pendingMsgs.forEach(m => {
+            m.status = 'intercepted';
+            broadcast('message_ack', { id: m.id, status: 'intercepted', receipt: 'Intercepted' });
+        });
+        saveState();
+        return { ok: true, method: 'strataflow_gate' };
     }
 
     // 2. Build combined message text
