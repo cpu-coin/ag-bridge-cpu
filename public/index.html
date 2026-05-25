@@ -837,6 +837,9 @@
       if (lbl) lbl.textContent = TAB_LABELS[tabId] || '';
       closeNav();
 
+      // Persist active tab so page refresh returns here
+      try { localStorage.setItem('ag_active_tab', tabId); } catch(e) {}
+
       if (tabId === 'tab-monitor') fetchMessages();
       if (tabId === 'tab-chat') {
           await fetchProjects();
@@ -906,6 +909,54 @@
       setInterval(() => { fetchMessages(); fetchAgentStatus(); fetchStatus(); fetchApprovals(); }, 5000);
       // Health poll: independently verify server is up even when WS is broken
       healthTimer = setInterval(() => pollHealth(), 10000);
+
+      // ── Restore last active tab + project on page refresh ──
+      const savedTab = localStorage.getItem('ag_active_tab');
+      const savedProject = localStorage.getItem('ag_selected_project');
+
+      if (savedProject) {
+        // Restore project selection after a short delay so fetchProjects populates the selector first
+        setTimeout(async () => {
+          await fetchProjects();
+          const selector = document.getElementById('chat-project-selector');
+          if (selector) {
+            // Try exact match first, then base project name
+            const baseName = savedProject.includes('::') ? savedProject.split('::')[0] : savedProject;
+            let found = false;
+            for (let i = 0; i < selector.options.length; i++) {
+              if (selector.options[i].value === savedProject || selector.options[i].value === baseName) {
+                selector.value = selector.options[i].value;
+                found = true;
+                break;
+              }
+            }
+            if (found) {
+              // Restore conversation ID if present
+              if (savedProject.includes('::')) {
+                selectedConversationId = savedProject.split('::')[1];
+              }
+              // Restore theme color
+              var projColor = getProjectColor(baseName);
+              document.documentElement.style.setProperty('--primary', projColor);
+              document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
+              // Tell server
+              api('/projects/select', 'POST', { project: baseName });
+            }
+          }
+          // Now switch to the saved tab (or chat if project was saved)
+          const targetTab = savedTab || (savedProject ? 'tab-chat' : 'tab-monitor');
+          if (targetTab !== 'tab-monitor') {
+            const navEl = document.getElementById(TAB_NAV_IDS[targetTab]);
+            switchTab(targetTab, navEl, true);
+          }
+        }, 300);
+      } else if (savedTab && savedTab !== 'tab-monitor') {
+        // No project saved, but restore last tab
+        setTimeout(() => {
+          const navEl = document.getElementById(TAB_NAV_IDS[savedTab]);
+          switchTab(savedTab, navEl, true);
+        }, 100);
+      }
     }
 
     // --- Connection Health ---
@@ -1441,6 +1492,9 @@
           var selector = document.getElementById('chat-project-selector');
           if (selector) selector.value = target;
           
+          // Persist selected project + conversation for page refresh
+          try { localStorage.setItem('ag_selected_project', target); } catch(e) {}
+          
           var projColor = getProjectColor(payload);
           document.documentElement.style.setProperty('--primary', projColor);
           document.documentElement.style.setProperty('--primary-glow', projColor + '4D');
@@ -1457,6 +1511,9 @@
       } else {
         payload = 'global';
       }
+
+      // Persist selected project for page refresh
+      try { localStorage.setItem('ag_selected_project', payload); } catch(e) {}
 
       await api('/projects/select', 'POST', { project: payload });
 
