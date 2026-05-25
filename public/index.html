@@ -949,6 +949,13 @@
             const navEl = document.getElementById(TAB_NAV_IDS[targetTab]);
             switchTab(targetTab, navEl, true);
           }
+          // Scroll chat thread to bottom after messages load
+          setTimeout(() => {
+            const thread = document.getElementById('chat-thread');
+            if (thread) thread.scrollTop = thread.scrollHeight;
+            const monThread = document.getElementById('monitor-thread');
+            if (monThread) monThread.scrollTop = monThread.scrollHeight;
+          }, 600);
         }, 300);
       } else if (savedTab && savedTab !== 'tab-monitor') {
         // No project saved, but restore last tab
