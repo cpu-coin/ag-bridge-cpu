@@ -1544,6 +1544,20 @@ app.post('/agent/request-approval', (req, res) => {
     broadcast('approval_requested', newApproval);
     broadcast('message_new', msg);
 
+    // Write approval to MemFlow outbox so mobile app picks it up via polling
+    // (WebSocket broadcast alone is unreliable — mobile may not be connected)
+    memflowWriteResponse(msgText, {
+        id: newApproval.id,
+        project: targetProject,
+        channel: 'approval',
+        from: 'agent',
+        actorId: `agent_${targetProject}`,
+        approvalId: newApproval.id,
+        kind: kind || 'command',
+        details: details || {},
+        risk: risk || 'medium'
+    }).catch(err => console.error('[MEMFLOW] Failed to write approval to MemFlow outbox:', err));
+
     res.json({ ok: true, approval: newApproval });
 });
 
@@ -1765,6 +1779,8 @@ async function pollMemflowOutbox() {
                     if (m.id === `msg_appr_${baseId}`) return true;
                     if (m.id === `msg_mf_${baseId}`) return true;
                     if (m.approvalId === `appr_${baseId}`) return true;
+                    // Catch approvals already created by /agent/request-approval
+                    if (resp.approvalId && m.approvalId === resp.approvalId) return true;
                     return false;
                 });
 
