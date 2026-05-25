@@ -1844,6 +1844,8 @@
     }
 
 
+    let _sendInFlight = false;
+    let _lastSendTime = 0;
     async function sendChat() {
       const selectorVal = document.getElementById('chat-project-selector').value;
       if (selectorVal === 'global' || selectorVal === 'Global Scope') {
@@ -1854,6 +1856,19 @@
       const input = document.getElementById('chat-input');
       const text = input.value.trim();
       if (!text) return;
+
+      // Dedup guard: prevent double-sends within 1 second
+      const now = Date.now();
+      if (_sendInFlight || (now - _lastSendTime < 1000)) return;
+      _sendInFlight = true;
+      _lastSendTime = now;
+
+      // Clear input IMMEDIATELY — do not wait for the network round-trip
+      input.value = '';
+
+      // Disable send button during flight
+      const sendBtn = document.querySelector('button[onclick="sendChat()"]');
+      if (sendBtn) { sendBtn.disabled = true; sendBtn.style.opacity = '0.5'; }
       
       // Parse project::conversationId format
       let projectStr = 'global';
@@ -1871,8 +1886,12 @@
       const senderAlias = localStorage.getItem('senderAlias') || 'Mobile';
       localStorage.setItem('lastSentMessage', text); // save for Retry Last
       
-      await api('/messages/send', 'POST', { to: 'agent', channel: 'work', text, project: projectStr, conversationId: convoId, senderAlias });
-      input.value = '';
+      try {
+        await api('/messages/send', 'POST', { to: 'agent', channel: 'work', text, project: projectStr, conversationId: convoId, senderAlias });
+      } finally {
+        _sendInFlight = false;
+        if (sendBtn) { sendBtn.disabled = false; sendBtn.style.opacity = ''; }
+      }
     }
 
 
