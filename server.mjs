@@ -8,7 +8,7 @@ import { existsSync } from 'fs';
 import { spawn, execSync } from 'child_process';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse, memflowCheckReceipts } from './connectors/index.mjs';
+import { getAllTargets, pokeTarget, memflowPollResponses, memflowMarkAsRead, memflowReadInbox, memflowWriteResponse, memflowCheckReceipts, memflowGetActiveAgents } from './connectors/index.mjs';
 import { getRunningProductType } from './connectors/antigravity.mjs';
 
 const APP_VERSION = '2.0.0';
@@ -1109,6 +1109,16 @@ app.get('/ping/echo', checkAuth, (req, res) => {
     res.json({ ok: true, ts, wsClients: wss.clients.size });
 });
 
+
+// GET /agents/active — Strataflow registry: which agents are heartbeating
+app.get('/agents/active', checkAuth, async (req, res) => {
+    try {
+        const agents = await memflowGetActiveAgents();
+        res.json({ ok: true, agents });
+    } catch (err) {
+        res.json({ ok: true, agents: [] });
+    }
+});
 
 // GET /projects
 app.get('/projects', checkAuth, async (req, res) => {
