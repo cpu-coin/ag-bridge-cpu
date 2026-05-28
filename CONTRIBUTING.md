@@ -1,5 +1,10 @@
 # Contributing to AG Bridge
 
+> **🔒 MAINTENANCE-ONLY (Frozen 2026-05-27)**
+> This repo is feature-complete. Only bug fixes, security patches, and dependency updates are accepted.
+> New features, endpoints, and intelligence logic go to [`memflow-cpu`](https://github.com/cpucoinio/memflow-cpu).
+> See [CODEFREEZE.md](CODEFREEZE.md) for details.
+
 We follow a **structured feature-branch workflow** to ensure stability in `main`.
 
 ## License

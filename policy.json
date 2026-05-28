@@ -16,7 +16,8 @@
       "allow": [
         ".*",
         "^cd /Users/seanbarger_1/Documents/projects/maitrix-frontend-branch/android && \\.\\./scripts/run-fastlane\\.sh release$",
-        "^cd /Users/seanbarger_1/Documents/projects/maitrix-frontend-branch && \\./scripts/switch-env\\.sh prod && cd android && \\.\\./scripts/run-fastlane\\.sh release$"
+        "^cd /Users/seanbarger_1/Documents/projects/maitrix-frontend-branch && \\./scripts/switch-env\\.sh prod && cd android && \\.\\./scripts/run-fastlane\\.sh release$",
+        "^node /Users/seanbarger_1/\\.gemini/antigravity-ide/brain/2819e0a2-9c0b-440e-a3a3-c5c7accad174/scratch/update_apple\\.js$"
       ],
       "deny": []
     },
