@@ -2054,15 +2054,28 @@ const _origPollMemflowOutbox = pollMemflowOutbox;
 // (lastPollSuccess is updated inline in the poll's try block — see below)
 
 // --- Graceful Shutdown ---
+// Exit code semantics for launchd (KeepAlive.SuccessfulExit = false):
+//   exit(0)  → "clean / intentional stop" → launchd will NOT restart
+//   exit(≠0) → "abnormal / crash"         → launchd WILL restart
+//
+// SIGTERM is what launchd sends during shutdown/reboot — we MUST exit non-zero
+// so launchd restarts us on the next boot.
+// SIGINT is typically Ctrl-C during dev — exit 0 to tell launchd "stay down."
+
 function gracefulShutdown(signal) {
     console.log(`\n[SHUTDOWN] Received ${signal}. Closing server...`);
     if (memflowPollTimer) clearInterval(memflowPollTimer);
+
+    // SIGINT = manual / intentional → exit 0 (launchd won't restart)
+    // SIGTERM = launchd stop / reboot → exit non-zero (launchd WILL restart)
+    const exitCode = signal === 'SIGINT' ? 0 : 1;
+
     server.close(() => {
-        console.log('[SHUTDOWN] HTTP server closed.');
-        process.exit(0);
+        console.log(`[SHUTDOWN] HTTP server closed. Exiting with code ${exitCode}.`);
+        process.exit(exitCode);
     });
     // Force exit after 5s if graceful close hangs
-    setTimeout(() => { process.exit(1); }, 5000);
+    setTimeout(() => { process.exit(exitCode); }, 5000);
 }
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>io.cpucoin.ag-bridge-cpu</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/seanbarger_1/.nvm/versions/node/v22.21.1/bin/node</string>
+        <string>/Users/seanbarger_1/Documents/projects/ag-bridge-cpu/server.mjs</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/seanbarger_1/Documents/projects/ag-bridge-cpu</string>
+
+    <!-- Start on login -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart only on abnormal exit.
+         SuccessfulExit=false: exit 0 = stay down, exit non-zero = restart.
+         SIGTERM (reboot/shutdown) → server.mjs exits 1 → launchd restarts.
+         SIGINT (Ctrl-C / manual stop) → server.mjs exits 0 → launchd stays down. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Environment -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>NODE_ENV</key>
+        <string>production</string>
+        <key>PATH</key>
+        <string>/Users/seanbarger_1/.nvm/versions/node/v22.21.1/bin:/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+    </dict>
+
+    <!-- Logging — uses /tmp for launchd reliability, server.mjs also logs to project logs/ -->
+    <key>StandardOutPath</key>
+    <string>/tmp/ag-bridge-stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/ag-bridge-stderr.log</string>
+
+    <!-- Resource limits -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+</dict>
+</plist>
